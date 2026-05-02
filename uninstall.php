@@ -16,6 +16,7 @@ delete_option( WSR_Helpers::BASELINE_OPTION );
 delete_option( WSR_Helpers::RESULTS_OPTION );
 delete_option( WSR_Helpers::IGNORE_OPTION );
 delete_option( WSR_Helpers::REVIEWED_OPTION );
+delete_option( WSR_Helpers::TIMELINE_OPTION );
 
 $timestamp = wp_next_scheduled( WSR_Helpers::CRON_HOOK );
 

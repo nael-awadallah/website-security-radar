@@ -20,37 +20,37 @@ Unlike many security plugins, this tool focuses on **visibility and control**, n
 
 == Key Features ==
 
-🔍 **File Integrity Monitoring**
+**File Integrity Monitoring**
 * Scan plugins, themes, uploads, and critical WordPress core files
 * Detect new, modified, and deleted files
 * Compare against a trusted baseline snapshot
 
-🛡️ **Malware Pattern Detection**
+**Malware Pattern Detection**
 * Identify suspicious PHP, JS, and HTML patterns
 * Detect obfuscated code, injected scripts, and common spam indicators
 * Highlight risky files with severity levels
 
-⚙️ **Security Hardening Checks**
+**Security Hardening Checks**
 * Detect common WordPress misconfigurations
 * Review debug settings, XML-RPC exposure, file permissions, and more
 * Provide actionable recommendations
 
-📊 **Security Dashboard**
+**Security Dashboard**
 * Simple and clear security score
 * Overview of detected issues
 * Prioritized recommendations for improvement
 
-🔔 **Alerts & Monitoring**
+**Alerts & Monitoring**
 * Manual scan via AJAX
 * Daily scheduled scans using WP-Cron
 * Email alerts for critical issues
 
-🧠 **Baseline System**
+**Baseline System**
 * Create a trusted snapshot of your website
 * Track changes over time
 * Reduce false positives
 
-🧹 **Triage Workflow**
+**Triage Workflow**
 * Mark findings as reviewed
 * Ignore known-safe files or paths
 * Keep your results clean and actionable

@@ -15,11 +15,22 @@ class WSR_Helpers {
 	const RESULTS_OPTION        = 'website_security_radar_scan_results';
 	const IGNORE_OPTION         = 'website_security_radar_ignored_paths';
 	const REVIEWED_OPTION       = 'website_security_radar_reviewed_results';
+	const TIMELINE_OPTION       = 'website_security_radar_timeline';
 	const CRON_HOOK             = 'website_security_radar_daily_scan';
 	const AJAX_SCAN_ACTION      = 'website_security_radar_run_scan';
 	const AJAX_BASELINE_ACTION  = 'website_security_radar_create_baseline';
 	const ADMIN_NONCE_ACTION    = 'website_security_radar_admin_action';
 	const AJAX_NONCE_ACTION     = 'website_security_radar_ajax_action';
+	const TIMELINE_DEFAULT_LIMIT = 500;
+
+	public static function get_ignore_rule_types(): array {
+		return array(
+			'exact_path'     => __( 'Exact file path', 'website-security-radar' ),
+			'folder_path'    => __( 'Folder path', 'website-security-radar' ),
+			'file_extension' => __( 'File extension', 'website-security-radar' ),
+			'contains_text'  => __( 'Pattern contains text', 'website-security-radar' ),
+		);
+	}
 
 	public static function get_default_settings() {
 		return array(
@@ -31,6 +42,7 @@ class WSR_Helpers {
 			'scan_themes'           => 1,
 			'scan_plugins'          => 1,
 			'scan_root_files'       => 1,
+			'timeline_event_limit'  => self::TIMELINE_DEFAULT_LIMIT,
 		);
 	}
 
@@ -106,6 +118,7 @@ class WSR_Helpers {
 			'potential risk'     => 'Potential Risk',
 			'hardening'          => 'Hardening',
 			'file change'        => 'File Change',
+			'uploads issue'      => 'Uploads Issue',
 			'updates'            => 'Updates',
 			'permissions'        => 'Permissions',
 			'exposure'           => 'Exposure',
@@ -120,24 +133,317 @@ class WSR_Helpers {
 		return ucwords( str_replace( '-', ' ', $type ) );
 	}
 
+	public static function get_timeline_event_types(): array {
+		return array(
+			'manual_scan_started'       => __( 'Manual Scan Started', 'website-security-radar' ),
+			'manual_scan_completed'     => __( 'Manual Scan Completed', 'website-security-radar' ),
+			'scheduled_scan_completed'  => __( 'Scheduled Scan Completed', 'website-security-radar' ),
+			'baseline_created'          => __( 'Baseline Created', 'website-security-radar' ),
+			'new_file_detected'         => __( 'New File Detected', 'website-security-radar' ),
+			'modified_file_detected'    => __( 'Modified File Detected', 'website-security-radar' ),
+			'suspicious_pattern_detected' => __( 'Suspicious Pattern Detected', 'website-security-radar' ),
+			'critical_issue_detected'   => __( 'Critical Issue Detected', 'website-security-radar' ),
+			'issue_marked_reviewed'     => __( 'Issue Marked Reviewed', 'website-security-radar' ),
+			'path_ignored'              => __( 'Path Ignored', 'website-security-radar' ),
+			'settings_changed'          => __( 'Settings Changed', 'website-security-radar' ),
+		);
+	}
+
+	public static function get_timeline_event_type_label( string $type ): string {
+		$types = self::get_timeline_event_types();
+		return $types[ $type ] ?? ucwords( str_replace( '_', ' ', $type ) );
+	}
+
+	public static function get_default_baseline_label(): string {
+		return sprintf(
+			/* translators: %s: current month and year. */
+			__( 'After cleanup - %s', 'website-security-radar' ),
+			wp_date( 'F Y' )
+		);
+	}
+
 	public static function get_ignore_list() {
-		$paths = get_option( self::IGNORE_OPTION, array() );
-		return is_array( $paths ) ? array_values( array_unique( array_filter( array_map( 'sanitize_text_field', $paths ) ) ) ) : array();
+		$stored_rules = get_option( self::IGNORE_OPTION, array() );
+		return self::normalize_ignore_rules( is_array( $stored_rules ) ? $stored_rules : array() );
 	}
 
 	public static function is_ignored_path( string $path, array $ignore_list = array() ): bool {
 		$relative = self::normalize_relative_path( $path );
-		$ignored  = ! empty( $ignore_list ) ? $ignore_list : self::get_ignore_list();
+		$ignored  = ! empty( $ignore_list ) ? self::normalize_ignore_rules( $ignore_list ) : self::get_ignore_list();
 
-		foreach ( $ignored as $ignored_path ) {
-			$ignored_path = trim( wp_normalize_path( sanitize_text_field( $ignored_path ) ), '/' );
-
-			if ( '' !== $ignored_path && 0 === strpos( $relative, $ignored_path ) ) {
+		foreach ( $ignored as $rule ) {
+			if ( self::ignore_rule_matches_path( $rule, $relative ) ) {
 				return true;
 			}
 		}
 
 		return false;
+	}
+
+	public static function save_ignore_rules( array $rules ): void {
+		update_option( self::IGNORE_OPTION, self::normalize_ignore_rules( $rules ), false );
+	}
+
+	public static function add_ignore_rule( array $rule ): array {
+		$normalized_rule = self::normalize_ignore_rule( $rule );
+
+		if ( empty( $normalized_rule ) ) {
+			return array(
+				'success' => false,
+				'code'    => 'invalid_rule',
+			);
+		}
+
+		$rules = self::get_ignore_list();
+
+		foreach ( $rules as $index => $existing_rule ) {
+			if ( $existing_rule['id'] === $normalized_rule['id'] ) {
+				$rules[ $index ] = array_merge( $existing_rule, $normalized_rule );
+				self::save_ignore_rules( $rules );
+
+				return array(
+					'success' => true,
+					'code'    => 'updated',
+					'rule'    => $normalized_rule,
+				);
+			}
+		}
+
+		$rules[] = $normalized_rule;
+		self::save_ignore_rules( $rules );
+
+		return array(
+			'success' => true,
+			'code'    => 'added',
+			'rule'    => $normalized_rule,
+		);
+	}
+
+	public static function delete_ignore_rule( string $rule_id ): bool {
+		$rules        = self::get_ignore_list();
+		$filtered     = array_values(
+			array_filter(
+				$rules,
+				static function ( array $rule ) use ( $rule_id ): bool {
+					return $rule['id'] !== $rule_id;
+				}
+			)
+		);
+		$was_deleted = count( $filtered ) !== count( $rules );
+
+		if ( $was_deleted ) {
+			self::save_ignore_rules( $filtered );
+		}
+
+		return $was_deleted;
+	}
+
+	public static function toggle_ignore_rule( string $rule_id, bool $enabled ): bool {
+		$rules   = self::get_ignore_list();
+		$updated = false;
+
+		foreach ( $rules as &$rule ) {
+			if ( $rule['id'] === $rule_id ) {
+				$rule['enabled'] = $enabled ? 1 : 0;
+				$updated         = true;
+				break;
+			}
+		}
+
+		if ( $updated ) {
+			self::save_ignore_rules( $rules );
+		}
+
+		return $updated;
+	}
+
+	public static function split_ignored_issues( array $issues, array $ignore_rules = array() ): array {
+		$rules   = ! empty( $ignore_rules ) ? self::normalize_ignore_rules( $ignore_rules ) : self::get_ignore_list();
+		$visible = array();
+		$ignored = array();
+
+		foreach ( $issues as $issue ) {
+			if ( self::issue_matches_ignore_rules( $issue, $rules ) ) {
+				$ignored[] = $issue;
+				continue;
+			}
+
+			$visible[] = $issue;
+		}
+
+		return array(
+			'visible' => $visible,
+			'ignored' => $ignored,
+		);
+	}
+
+	public static function issue_matches_ignore_rules( array $issue, array $ignore_rules = array() ): bool {
+		$path = (string) ( $issue['path'] ?? $issue['file'] ?? '' );
+
+		if ( '' === $path ) {
+			return false;
+		}
+
+		return self::is_ignored_path( $path, $ignore_rules );
+	}
+
+	public static function get_ignore_rule_warning( array $rule ): string {
+		$type  = $rule['type'] ?? '';
+		$value = strtolower( (string) ( $rule['value'] ?? '' ) );
+
+		if ( 'file_extension' === $type && 'php' === $value ) {
+			return __( 'This rule ignores all PHP files and can hide serious findings.', 'website-security-radar' );
+		}
+
+		if ( 'contains_text' === $type && in_array( $value, array( 'php', 'wp-content', 'uploads' ), true ) ) {
+			return __( 'This pattern is broad and may hide more findings than expected.', 'website-security-radar' );
+		}
+
+		if ( 'folder_path' === $type && in_array( $value, array( 'wp-content', 'wp-content/uploads' ), true ) ) {
+			return __( 'This folder rule is broad and may hide many findings.', 'website-security-radar' );
+		}
+
+		return '';
+	}
+
+	public static function rule_requires_uploads_php_confirmation( array $rule ): bool {
+		$type  = $rule['type'] ?? '';
+		$value = strtolower( (string) ( $rule['value'] ?? '' ) );
+
+		if ( 'exact_path' === $type ) {
+			return self::is_uploads_path( $value ) && self::is_php_file( $value );
+		}
+
+		if ( 'folder_path' === $type ) {
+			return 0 === strpos( $value, 'wp-content/uploads' );
+		}
+
+		if ( 'file_extension' === $type ) {
+			return 'php' === $value;
+		}
+
+		if ( 'contains_text' === $type ) {
+			return false !== strpos( $value, 'php' ) || false !== strpos( $value, 'upload' );
+		}
+
+		return false;
+	}
+
+	public static function count_ignored_matches_for_rule( array $rule, array $issues ): int {
+		$count = 0;
+
+		foreach ( $issues as $issue ) {
+			$path = (string) ( $issue['path'] ?? $issue['file'] ?? '' );
+
+			if ( '' !== $path && self::ignore_rule_matches_path( $rule, $path ) ) {
+				++$count;
+			}
+		}
+
+		return $count;
+	}
+
+	private static function normalize_ignore_rules( array $rules ): array {
+		$normalized = array();
+
+		foreach ( $rules as $rule ) {
+			$normalized_rule = self::normalize_ignore_rule( $rule );
+
+			if ( empty( $normalized_rule ) ) {
+				continue;
+			}
+
+			$normalized[ $normalized_rule['id'] ] = $normalized_rule;
+		}
+
+		return array_values( $normalized );
+	}
+
+	private static function normalize_ignore_rule( $rule ): array {
+		if ( is_string( $rule ) ) {
+			$value = trim( self::normalize_relative_path( sanitize_text_field( $rule ) ), '/' );
+
+			if ( '' === $value ) {
+				return array();
+			}
+
+			$rule = array(
+				'type'             => self::infer_legacy_ignore_rule_type( $value ),
+				'value'            => $value,
+				'enabled'          => 1,
+				'allow_uploads_php'=> 0,
+			);
+		}
+
+		if ( ! is_array( $rule ) ) {
+			return array();
+		}
+
+		$type = sanitize_key( (string) ( $rule['type'] ?? '' ) );
+
+		if ( ! array_key_exists( $type, self::get_ignore_rule_types() ) ) {
+			return array();
+		}
+
+		$value = self::sanitize_ignore_rule_value( $type, (string) ( $rule['value'] ?? '' ) );
+
+		if ( '' === $value ) {
+			return array();
+		}
+
+		return array(
+			'id'                => sanitize_key( (string) ( $rule['id'] ?? hash( 'sha256', $type . '|' . $value ) ) ),
+			'type'              => $type,
+			'value'             => $value,
+			'enabled'           => ! empty( $rule['enabled'] ) ? 1 : 0,
+			'allow_uploads_php' => ! empty( $rule['allow_uploads_php'] ) ? 1 : 0,
+			'created_at'        => sanitize_text_field( (string) ( $rule['created_at'] ?? gmdate( 'c' ) ) ),
+		);
+	}
+
+	private static function infer_legacy_ignore_rule_type( string $value ): string {
+		return '' !== pathinfo( $value, PATHINFO_EXTENSION ) ? 'exact_path' : 'folder_path';
+	}
+
+	private static function sanitize_ignore_rule_value( string $type, string $value ): string {
+		$value = sanitize_text_field( $value );
+
+		switch ( $type ) {
+			case 'exact_path':
+			case 'folder_path':
+				return trim( self::normalize_relative_path( $value ), '/' );
+			case 'file_extension':
+				return ltrim( strtolower( sanitize_key( $value ) ), '.' );
+			case 'contains_text':
+				return strtolower( trim( $value ) );
+			default:
+				return '';
+		}
+	}
+
+	private static function ignore_rule_matches_path( array $rule, string $path ): bool {
+		if ( empty( $rule['enabled'] ) ) {
+			return false;
+		}
+
+		$relative = self::normalize_relative_path( $path );
+
+		if ( self::is_uploads_path( $relative ) && self::is_php_file( $relative ) && empty( $rule['allow_uploads_php'] ) ) {
+			return false;
+		}
+
+		switch ( $rule['type'] ?? '' ) {
+			case 'exact_path':
+				return $relative === $rule['value'];
+			case 'folder_path':
+				return $relative === $rule['value'] || 0 === strpos( $relative, trailingslashit( $rule['value'] ) );
+			case 'file_extension':
+				return strtolower( pathinfo( $relative, PATHINFO_EXTENSION ) ) === strtolower( (string) ( $rule['value'] ?? '' ) );
+			case 'contains_text':
+				return false !== strpos( strtolower( $relative ), strtolower( (string) ( $rule['value'] ?? '' ) ) );
+			default:
+				return false;
+		}
 	}
 
 	public static function get_reviewed_results() {
@@ -196,26 +502,67 @@ class WSR_Helpers {
 	}
 
 	public static function calculate_security_score( array $issues ): int {
-		$score = 100;
+		$breakdown = self::calculate_security_score_breakdown( $issues );
+		return (int) ( $breakdown['score'] ?? 100 );
+	}
 
-		foreach ( $issues as $issue ) {
-			switch ( $issue['severity'] ?? 'low' ) {
-				case 'critical':
-					$score -= 20;
-					break;
-				case 'high':
-					$score -= 10;
-					break;
-				case 'medium':
-					$score -= 5;
-					break;
-				default:
-					$score -= 2;
-					break;
-			}
+	public static function calculate_security_score_breakdown( array $issues ): array {
+		$categories = self::get_score_breakdown_categories();
+		$breakdown  = array();
+		$total      = 0;
+		$seen       = array();
+
+		foreach ( $categories as $key => $label ) {
+			$breakdown[ $key ] = array(
+				'label'          => $label,
+				'deduction'      => 0,
+				'issue_count'    => 0,
+				'severity_counts'=> array(
+					'critical' => 0,
+					'high'     => 0,
+					'medium'   => 0,
+					'low'      => 0,
+				),
+			);
 		}
 
-		return max( 0, $score );
+		foreach ( $issues as $issue ) {
+			$dedupe_key = self::get_score_dedupe_key( $issue );
+
+			if ( isset( $seen[ $dedupe_key ] ) ) {
+				continue;
+			}
+
+			$seen[ $dedupe_key ] = true;
+			$category            = self::get_score_category( $issue );
+			$severity            = strtolower( (string) ( $issue['severity'] ?? 'low' ) );
+			$deduction           = self::get_score_deduction_value( $severity );
+
+			if ( ! isset( $breakdown[ $category ] ) ) {
+				continue;
+			}
+
+			$breakdown[ $category ]['deduction'] += $deduction;
+			++$breakdown[ $category ]['issue_count'];
+
+			if ( isset( $breakdown[ $category ]['severity_counts'][ $severity ] ) ) {
+				++$breakdown[ $category ]['severity_counts'][ $severity ];
+			}
+
+			$total += $deduction;
+		}
+
+		return array(
+			'score'                => max( 0, 100 - $total ),
+			'total_deduction'      => $total,
+			'deduction_per_severity' => array(
+				'critical' => 20,
+				'high'     => 10,
+				'medium'   => 5,
+				'low'      => 2,
+			),
+			'categories'           => $breakdown,
+		);
 	}
 
 	public static function get_risk_level( int $score ): string {
@@ -247,5 +594,77 @@ class WSR_Helpers {
 		}
 
 		return wp_date( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $timestamp );
+	}
+
+	public static function get_score_breakdown_categories(): array {
+		return array(
+			'malware'             => __( 'Malware', 'website-security-radar' ),
+			'suspicious_patterns' => __( 'Suspicious Patterns', 'website-security-radar' ),
+			'file_changes'        => __( 'File Changes', 'website-security-radar' ),
+			'hardening'           => __( 'Hardening', 'website-security-radar' ),
+			'uploads_risk'        => __( 'Uploads Risk', 'website-security-radar' ),
+		);
+	}
+
+	private static function get_score_category( array $issue ): string {
+		$type = strtolower( trim( (string) ( $issue['type'] ?? '' ) ) );
+		$path = (string) ( $issue['path'] ?? $issue['file'] ?? '' );
+
+		if ( '' !== $path && self::is_uploads_path( $path ) ) {
+			return 'uploads_risk';
+		}
+
+		if ( in_array( $type, array( 'hardening', 'updates', 'permissions', 'exposure' ), true ) ) {
+			return 'hardening';
+		}
+
+		if ( 'file change' === $type ) {
+			return 'file_changes';
+		}
+
+		if ( 'malware' === $type ) {
+			return 'malware';
+		}
+
+		return 'suspicious_patterns';
+	}
+
+	private static function get_score_deduction_value( string $severity ): int {
+		switch ( $severity ) {
+			case 'critical':
+				return 20;
+			case 'high':
+				return 10;
+			case 'medium':
+				return 5;
+			default:
+				return 2;
+		}
+	}
+
+	private static function get_score_dedupe_key( array $issue ): string {
+		$path            = self::normalize_relative_path( (string) ( $issue['path'] ?? $issue['file'] ?? '' ) );
+		$matched_patterns = array();
+
+		if ( ! empty( $issue['matched_patterns'] ) && is_array( $issue['matched_patterns'] ) ) {
+			$matched_patterns = array_map( 'sanitize_key', $issue['matched_patterns'] );
+			sort( $matched_patterns, SORT_STRING );
+		}
+
+		$pattern_key = ! empty( $matched_patterns )
+			? implode( ',', $matched_patterns )
+			: sanitize_title( (string) ( $issue['issue'] ?? $issue['type'] ?? 'issue' ) );
+
+		return hash(
+			'sha256',
+			implode(
+				'|',
+				array(
+					self::get_score_category( $issue ),
+					$path,
+					$pattern_key,
+				)
+			)
+		);
 	}
 }

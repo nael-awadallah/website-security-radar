@@ -30,6 +30,7 @@ class WSR_Settings {
 		$output['scan_themes']           = ! empty( $input['scan_themes'] ) ? 1 : 0;
 		$output['scan_plugins']          = ! empty( $input['scan_plugins'] ) ? 1 : 0;
 		$output['scan_root_files']       = ! empty( $input['scan_root_files'] ) ? 1 : 0;
+		$output['timeline_event_limit']  = min( WSR_Helpers::TIMELINE_DEFAULT_LIMIT, max( 50, absint( $input['timeline_event_limit'] ?? $defaults['timeline_event_limit'] ) ) );
 
 		return $output;
 	}

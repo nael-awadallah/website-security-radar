@@ -30,6 +30,7 @@ require_once WSR_PLUGIN_DIR . 'includes/class-file-scanner.php';
 require_once WSR_PLUGIN_DIR . 'includes/class-malware-scanner.php';
 require_once WSR_PLUGIN_DIR . 'includes/class-hardening-checker.php';
 require_once WSR_PLUGIN_DIR . 'includes/class-baseline.php';
+require_once WSR_PLUGIN_DIR . 'includes/class-timeline.php';
 require_once WSR_PLUGIN_DIR . 'includes/class-notifier.php';
 require_once WSR_PLUGIN_DIR . 'includes/class-cron.php';
 require_once WSR_PLUGIN_DIR . 'includes/class-admin-page.php';

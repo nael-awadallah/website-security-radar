@@ -1,61 +1,48 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 200" fill="none">
-  <!-- Background gradient -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1544 500" width="1544" height="500">
   <defs>
-    <linearGradient id="bgGrad" x1="0" y1="0" x2="800" y2="200" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#0F172A"/>
-      <stop offset="100%" stop-color="#1E3A5F"/>
-    </linearGradient>
-    <linearGradient id="sweepGrad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#22C55E" stop-opacity="0"/>
-      <stop offset="100%" stop-color="#22C55E" stop-opacity=".35"/>
+    <linearGradient id="banner-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0F172A" />
+      <stop offset="100%" style="stop-color:#1E293B" />
     </linearGradient>
   </defs>
-  <rect width="800" height="200" rx="16" fill="url(#bgGrad)"/>
+  <rect width="1544" height="500" fill="url(#banner-grad)" />
 
-  <!-- Grid dots background -->
-  <pattern id="dots" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse">
-    <circle cx="1" cy="1" r="1" fill="#ffffff" opacity=".04"/>
-  </pattern>
-  <rect width="800" height="200" rx="16" fill="url(#dots)"/>
+  <!-- Decorative radar background -->
+  <g opacity="0.1">
+    <circle cx="300" cy="250" r="150" fill="none" stroke="#0EA5E9" stroke-width="2" />
+    <circle cx="300" cy="250" r="100" fill="none" stroke="#0EA5E9" stroke-width="1" />
+    <circle cx="300" cy="250" r="50" fill="none" stroke="#0EA5E9" stroke-width="1" />
+  </g>
 
-  <!-- Radar rings centered on shield -->
-  <circle cx="110" cy="100" r="30" stroke="#0EA5E9" stroke-width="1.5" opacity=".2"/>
-  <circle cx="110" cy="100" r="55" stroke="#0EA5E9" stroke-width="1" opacity=".14"/>
-  <circle cx="110" cy="100" r="80" stroke="#0EA5E9" stroke-width=".8" opacity=".08"/>
+  <!-- Shield icon -->
+  <g transform="translate(200,150)">
+    <path d="M100 10 L180 55 L180 130 Q180 200 100 230 Q20 200 20 130 L20 55 Z" fill="none" stroke="#0EA5E9"
+      stroke-width="4" />
+    <circle cx="100" cy="120" r="45" fill="none" stroke="#22C55E" stroke-width="2" opacity="0.8" />
+    <circle cx="100" cy="120" r="8" fill="#22C55E" />
+  </g>
 
-  <!-- Shield -->
-  <path d="M110 52l-30 10v22c0 17 12 33 30 38 18-5 30-21 30-38V62L110 52z"
-        fill="#0EA5E9" opacity=".18" stroke="#0EA5E9" stroke-width="2.2" stroke-linejoin="round"/>
-  <circle cx="110" cy="96" r="5" fill="#0EA5E9"/>
-  <circle cx="110" cy="96" r="12" stroke="#0EA5E9" stroke-width="1.6" opacity=".5" stroke-dasharray="3 2"/>
-  <!-- Sweep -->
-  <line x1="110" y1="96" x2="132" y2="74" stroke="#22C55E" stroke-width="2.5" stroke-linecap="round"/>
-  <circle cx="132" cy="74" r="3.5" fill="#22C55E"/>
-  <!-- Sweep fill area -->
-  <path d="M110 96 L132 74 A22 22 0 0 1 126 108 Z" fill="url(#sweepGrad)"/>
-
-  <!-- Wordmark -->
-  <text x="220" y="88" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-        font-size="36" font-weight="800" fill="#FFFFFF" letter-spacing="-1">
-    Security Radar
+  <!-- Text -->
+  <text x="450" y="200" font-family="system-ui, -apple-system, sans-serif" font-size="48" font-weight="700"
+    fill="#F8FAFC">
+    Website Security Radar
   </text>
-  <text x="222" y="118" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-        font-size="14" font-weight="400" fill="#94A3B8" letter-spacing="1.5">
-    MALWARE SCANNER · FILE MONITOR · HARDENING CHECK
-  </text>
-  <!-- Version badge -->
-  <rect x="222" y="136" width="96" height="24" rx="6" fill="#0EA5E9" opacity=".2"/>
-  <text x="270" y="152" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
-        font-size="12" font-weight="600" fill="#38BDF8" text-anchor="middle" letter-spacing=".5">
-    Version 1.0.0
+  <text x="450" y="260" font-family="system-ui, -apple-system, sans-serif" font-size="24" fill="#94A3B8">
+    Lightweight malware scanner, file monitor &amp; hardening checker for WordPress
   </text>
 
-  <!-- Right side decorative blips -->
-  <circle cx="680" cy="70" r="4" fill="#22C55E" opacity=".6"/>
-  <circle cx="720" cy="110" r="3" fill="#0EA5E9" opacity=".5"/>
-  <circle cx="700" cy="140" r="2" fill="#F59E0B" opacity=".6"/>
-  <circle cx="750" cy="80" r="2.5" fill="#22C55E" opacity=".4"/>
-  <line x1="680" y1="70" x2="720" y2="110" stroke="#0EA5E9" stroke-width=".8" opacity=".2"/>
-  <line x1="720" y1="110" x2="700" y2="140" stroke="#0EA5E9" stroke-width=".8" opacity=".2"/>
-  <line x1="700" y1="140" x2="750" y2="80" stroke="#22C55E" stroke-width=".8" opacity=".2"/>
+  <!-- Badges -->
+  <g transform="translate(450,320)">
+    <rect x="0" y="0" rx="8" width="140" height="40" fill="#22C55E" opacity="0.2" />
+    <text x="70" y="25" font-family="system-ui" font-size="14" font-weight="600" fill="#22C55E" text-anchor="middle">✓
+      WordPress.org Ready</text>
+
+    <rect x="160" y="0" rx="8" width="130" height="40" fill="#0EA5E9" opacity="0.2" />
+    <text x="225" y="25" font-family="system-ui" font-size="14" font-weight="600" fill="#0EA5E9" text-anchor="middle">✓
+      No Tracking</text>
+
+    <rect x="310" y="0" rx="8" width="150" height="40" fill="#F59E0B" opacity="0.2" />
+    <text x="385" y="25" font-family="system-ui" font-size="14" font-weight="600" fill="#F59E0B" text-anchor="middle">✓
+      Client-Friendly UI</text>
+  </g>
 </svg>
