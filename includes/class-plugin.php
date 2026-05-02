@@ -112,7 +112,7 @@ class WSR_Plugin {
 		$baseline    = $this->filter_baseline_by_ignore_rules( $this->baseline->compare( $inventory ), $ignore_list );
 		$issues      = $this->build_change_issues( $baseline );
 
-		$malware_scanner = new WSR_Malware_Scanner( $settings, $ignore_list );
+		$malware_scanner = new WSR_Malware_Scanner( $settings, $ignore_list, $baseline );
 		$issues          = array_merge( $issues, $malware_scanner->scan( $inventory ) );
 
 		$hardening_checker = new WSR_Hardening_Checker();

@@ -915,7 +915,7 @@ class WSR_Admin_Page {
 					<?php foreach ( $issues as $issue ) : ?>
 						<tr>
 							<td><span class="wsr-type-pill"><?php echo esc_html( WSR_Helpers::get_type_label( (string) ( $issue['type'] ?? '' ) ) ); ?></span></td>
-							<td><span class="<?php echo esc_attr( WSR_Helpers::severity_label_class( (string) $issue['severity'] ) ); ?>"><?php echo esc_html( ucfirst( (string) $issue['severity'] ) ); ?></span><?php if ( ! empty( $issue['confidence'] ) ) : ?><span class="wsr-confidence"><?php echo esc_html( ucfirst( (string) $issue['confidence'] ) ); ?></span><?php endif; ?></td>
+							<td><span class="<?php echo esc_attr( WSR_Helpers::severity_label_class( (string) $issue['severity'] ) ); ?>"><?php echo esc_html( ucfirst( (string) $issue['severity'] ) ); ?></span><?php if ( ! empty( $issue['confidence'] ) ) : ?><span class="wsr-confidence wsr-confidence-<?php echo esc_attr( sanitize_key( (string) $issue['confidence'] ) ); ?>"><?php echo esc_html( ucfirst( (string) $issue['confidence'] ) ); ?></span><?php endif; ?></td>
 							<td>
 								<?php $display_target = $this->get_issue_subject_label( $issue ); ?>
 								<code class="wsr-path" title="<?php echo esc_attr( $display_target ); ?>"><?php echo esc_html( $display_target ); ?></code>
@@ -925,7 +925,7 @@ class WSR_Admin_Page {
 							<td><?php echo esc_html( WSR_Helpers::format_datetime( (string) $issue['detected_at'] ) ); ?></td>
 							<td>
 								<div class="wsr-table-actions">
-									<a class="button button-small" href="<?php echo esc_url( WSR_Helpers::admin_url( 'website-security-radar-results', array( 'issue' => $issue['id'] ) ) ); ?>"><?php esc_html_e( 'View details', 'website-security-radar' ); ?></a>
+									<a class="button button-primary button-small" href="<?php echo esc_url( WSR_Helpers::admin_url( 'website-security-radar-results', array( 'issue' => $issue['id'] ) ) ); ?>"><?php esc_html_e( 'View details', 'website-security-radar' ); ?></a>
 									<?php if ( $this->issue_has_change_details( $issue ) ) : ?>
 										<a class="button button-small" href="<?php echo esc_url( $this->get_change_details_url( $issue ) ); ?>"><?php esc_html_e( 'View change details', 'website-security-radar' ); ?></a>
 									<?php endif; ?>
@@ -1303,6 +1303,14 @@ class WSR_Admin_Page {
 					'label' => __( 'Status', 'website-security-radar' ),
 					'value' => __( 'Disabled', 'website-security-radar' ),
 				),
+				array(
+					'label' => __( 'Last checked', 'website-security-radar' ),
+					'value' => WSR_Helpers::format_datetime( '' ),
+				),
+				array(
+					'label' => __( 'Vulnerabilities found', 'website-security-radar' ),
+					'value' => '0',
+				),
 			);
 		}
 
@@ -1328,6 +1336,14 @@ class WSR_Admin_Page {
 				array(
 					'label' => __( 'Provider', 'website-security-radar' ),
 					'value' => (string) ( $summary['provider_label'] ?? __( 'Not configured', 'website-security-radar' ) ),
+				),
+				array(
+					'label' => __( 'Last checked', 'website-security-radar' ),
+					'value' => WSR_Helpers::format_datetime( (string) ( $summary['last_checked'] ?? '' ) ),
+				),
+				array(
+					'label' => __( 'Vulnerabilities found', 'website-security-radar' ),
+					'value' => (string) (int) ( $summary['vulnerabilities_found'] ?? 0 ),
 				),
 			);
 		}
@@ -1380,11 +1396,20 @@ class WSR_Admin_Page {
 			);
 		}
 
-		if ( $top_issue ) {
+		if ( ! empty( $summary['critical_issues'] ) && ! empty( $summary['suspicious_files'] ) ) {
 			$recommendations[] = array(
 				'icon'        => '>',
 				'tone'        => 'warning',
-				'title'       => __( 'Prioritize critical issues first', 'website-security-radar' ),
+				'title'       => __( 'Verify suspicious files before deployment', 'website-security-radar' ),
+				'description' => __( 'Validate suspicious files against a trusted plugin, theme, or backup source before they are promoted or marked as safe.', 'website-security-radar' ),
+			);
+		}
+
+		if ( $top_issue && empty( $summary['critical_issues'] ) ) {
+			$recommendations[] = array(
+				'icon'        => '>',
+				'tone'        => 'warning',
+				'title'       => __( 'Prioritize notable findings', 'website-security-radar' ),
 				'description' => sprintf(
 					/* translators: %s: issue label. */
 					__( 'Start with: %s.', 'website-security-radar' ),
@@ -1406,8 +1431,8 @@ class WSR_Admin_Page {
 			$recommendations[] = array(
 				'icon'        => '+',
 				'tone'        => 'warning',
-				'title'       => __( 'Create a baseline', 'website-security-radar' ),
-				'description' => __( 'Save a clean snapshot after validation so future scans can separate expected changes from real drift.', 'website-security-radar' ),
+				'title'       => __( 'Create a trusted baseline after cleanup', 'website-security-radar' ),
+				'description' => __( 'Save a clean baseline after validation so future scans can separate expected changes from real drift.', 'website-security-radar' ),
 			);
 		}
 

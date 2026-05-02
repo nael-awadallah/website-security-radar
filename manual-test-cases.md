@@ -6,14 +6,16 @@ Use these cases to validate the backdoor heuristics after running a manual scan 
 
 1. `wp-content/uploads/2026/05/radio.php`
 Expected:
-- `Malware`
+- `Uploads Risk` or `Malware`
 - `critical`
+- `high` confidence
 - Matched patterns include `uploads_php`, `php_in_date_or_image_folder`, `known_backdoor_filename`
 
 2. `wp-content/uploads/2026/05/banner.jpg` containing `<?php eval(base64_decode(...)); ?>`
 Expected:
-- `Malware`
+- `Uploads Risk`
 - `critical`
+- `high` confidence
 - Matched patterns include `disguised_image_php`
 
 3. `wp-content/uploads/images/about.php`
@@ -34,6 +36,21 @@ Expected:
 - `critical`
 - Matched patterns include `random_php_filename`, `small_obfuscated_php`, `php_base64_decode`, `php_eval`
 
+6. `wp-content/plugins/advanced-custom-fields-pro/assets/images/field-type-previews/field-preview-file.png` containing only a PHP marker
+Expected:
+- `Potential Risk`
+- `low` or `medium`
+- `low` confidence
+- Not `critical`
+- Context notes mention known plugin asset context
+
+7. Unknown PHP file containing `eval(base64_decode(gzinflate(...)))`
+Expected:
+- `Malware`
+- `critical`
+- `high` confidence
+- Matched patterns include `php_eval`, `php_base64_decode`, `php_gzinflate`
+
 ## Expected non-detections
 
 1. `wp-includes/class-wp-cache.php`
@@ -46,11 +63,18 @@ Expected:
 
 3. Legitimate plugin or theme asset with only JavaScript `eval()` in a minified vendor file
 Expected:
-- Existing low-confidence logic remains in place
+- `Potential Risk`
+- `low` or `medium`
+- `low` confidence
 
 4. Normal media files in uploads without PHP tags
 Expected:
 - No disguised image detection
+
+5. Known plugin file unchanged since baseline with one weak indicator
+Expected:
+- Downgraded to `Potential Risk` or ignored by existing duplicate/minified logic
+- `low` confidence when reported
 
 ## New feature checks
 

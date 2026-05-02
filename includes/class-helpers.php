@@ -127,6 +127,7 @@ class WSR_Helpers {
 			'malware'            => __( 'Malware', 'website-security-radar' ),
 			'suspicious pattern' => __( 'Suspicious Pattern', 'website-security-radar' ),
 			'potential risk'     => __( 'Potential Risk', 'website-security-radar' ),
+			'uploads risk'       => __( 'Uploads Risk', 'website-security-radar' ),
 			'hardening'          => __( 'Hardening', 'website-security-radar' ),
 			'file change'        => __( 'File Change', 'website-security-radar' ),
 			'uploads issue'      => __( 'Uploads Issue', 'website-security-radar' ),
@@ -671,56 +672,386 @@ class WSR_Helpers {
 	}
 
 	public static function get_default_results(): array {
+		return self::generate_realistic_demo_data();
+	}
+
+	private static function generate_realistic_demo_data(): array {
+		$seed          = self::get_demo_seed();
+		$settings      = self::get_settings();
+		$provider_key  = sanitize_key( (string) ( $settings['vulnerability_provider'] ?? 'mock' ) );
+		$providers     = self::get_vulnerability_provider_options();
+		$scanned_at    = gmdate( 'c', time() - self::bounded_int( $seed, 'scanned_offset', 3 * HOUR_IN_SECONDS, 14 * HOUR_IN_SECONDS ) );
+		$file_count    = self::bounded_int( $seed, 'inventory_count', 4200, 9800 );
+		$new_files     = self::bounded_int( $seed, 'new_files', 2, 5 );
+		$modified      = self::bounded_int( $seed, 'modified_files', 4, 8 );
+		$issues        = self::get_demo_issues( $seed, $scanned_at );
+		$breakdown     = self::build_demo_score_breakdown( $issues );
+		$severity      = self::count_severity( $issues );
+		$vuln_enabled  = ! empty( $settings['enable_vulnerability_checks'] );
+
 		return array(
-			'scanned_at'       => '',
-			'score'            => 100,
-			'risk_level'       => 'Safe',
+			'scanned_at'       => $scanned_at,
+			'score'            => (int) $breakdown['score'],
+			'risk_level'       => self::get_risk_level( (int) $breakdown['score'] ),
 			'summary'          => array(
-				'total_scanned_files'     => 0,
-				'new_files'               => 0,
-				'modified_files'          => 0,
+				'total_scanned_files'     => $file_count,
+				'new_files'               => $new_files,
+				'modified_files'          => $modified,
 				'deleted_files'           => 0,
-				'suspicious_files'        => 0,
-				'hardening_warnings'      => 0,
-				'critical_issues'         => 0,
+				'suspicious_files'        => self::count_demo_suspicious_files( $issues ),
+				'hardening_warnings'      => self::count_demo_issues_by_type( $issues, array( 'hardening', 'updates', 'permissions', 'exposure' ) ),
+				'critical_issues'         => (int) ( $severity['critical'] ?? 0 ),
 				'ignored_findings'        => 0,
-				'cron_findings'           => 0,
-				'user_security_findings'  => 0,
+				'cron_findings'           => self::count_demo_issues_by_type( $issues, array( 'cron' ) ),
+				'user_security_findings'  => self::count_demo_issues_by_type( $issues, array( 'user security' ) ),
 				'vulnerability_findings'  => 0,
 			),
-			'severity_counts'  => array(
-				'critical' => 0,
-				'high'     => 0,
-				'medium'   => 0,
-				'low'      => 0,
-			),
-			'score_breakdown'  => array(
-				'score'                  => 100,
-				'total_deduction'        => 0,
-				'deduction_per_severity' => array(
-					'critical' => 20,
-					'high'     => 10,
-					'medium'   => 5,
-					'low'      => 2,
-				),
-				'categories'             => array(),
-			),
-			'issues'           => array(),
+			'severity_counts'  => $severity,
+			'score_breakdown'  => $breakdown,
+			'issues'           => $issues,
 			'baseline'         => array(
 				'has_baseline' => false,
 			),
-			'inventory_count'       => 0,
+			'inventory_count'       => $file_count,
 			'vulnerability_checks'  => array(
-				'enabled'                => false,
-				'provider'               => '',
-				'provider_label'         => '',
-				'status'                 => 'disabled',
+				'enabled'                => $vuln_enabled,
+				'provider'               => $provider_key,
+				'provider_label'         => $providers[ $provider_key ] ?? '',
+				'status'                 => $vuln_enabled ? 'ready' : 'disabled',
 				'last_checked'           => '',
 				'vulnerabilities_found'  => 0,
 				'critical_found'         => 0,
 				'error_message'          => '',
 			),
 		);
+	}
+
+	private static function get_demo_issues( int $seed, string $scanned_at ): array {
+		$offsets = array(
+			11 * MINUTE_IN_SECONDS,
+			27 * MINUTE_IN_SECONDS,
+			43 * MINUTE_IN_SECONDS,
+			58 * MINUTE_IN_SECONDS,
+			79 * MINUTE_IN_SECONDS,
+			95 * MINUTE_IN_SECONDS,
+			112 * MINUTE_IN_SECONDS,
+			131 * MINUTE_IN_SECONDS,
+			154 * MINUTE_IN_SECONDS,
+			171 * MINUTE_IN_SECONDS,
+			189 * MINUTE_IN_SECONDS,
+			204 * MINUTE_IN_SECONDS,
+			223 * MINUTE_IN_SECONDS,
+			239 * MINUTE_IN_SECONDS,
+			254 * MINUTE_IN_SECONDS,
+			272 * MINUTE_IN_SECONDS,
+			289 * MINUTE_IN_SECONDS,
+		);
+
+		$issues = array(
+			array(
+				'severity'           => 'critical',
+				'type'               => 'malware',
+				'path'               => 'wp-content/uploads/2026/04/classic-editor-cache.php',
+				'issue'              => __( 'Executable PHP file detected in uploads', 'website-security-radar' ),
+				'explanation'        => __( 'A PHP file inside uploads is uncommon for normal media workflows and should be verified before the next deployment.', 'website-security-radar' ),
+				'recommended_action' => __( 'Review the file contents, confirm ownership, and block PHP execution in uploads if it is not required.', 'website-security-radar' ),
+				'confidence'         => 'high',
+				'score'              => 96,
+				'line'               => 1,
+				'demo_deduction'     => 11,
+			),
+			array(
+				'severity'           => 'critical',
+				'type'               => 'suspicious pattern',
+				'path'               => 'wp-content/plugins/site-tools/includes/class-maintenance-importer.php',
+				'issue'              => __( 'Command execution function detected in plugin code', 'website-security-radar' ),
+				'explanation'        => __( 'This file references a command execution function in a plugin context where it is not usually expected.', 'website-security-radar' ),
+				'recommended_action' => __( 'Inspect the change against the trusted plugin source and remove it if the call is not part of approved maintenance tooling.', 'website-security-radar' ),
+				'confidence'         => 'high',
+				'score'              => 94,
+				'line'               => 214,
+				'demo_deduction'     => 10,
+			),
+			array(
+				'severity'           => 'critical',
+				'type'               => 'suspicious pattern',
+				'path'               => 'wp-content/themes/astra/inc/template-hooks/about.php',
+				'issue'              => __( 'Unexpected about.php file in theme code', 'website-security-radar' ),
+				'explanation'        => __( 'This filename and location commonly warrant manual review because it can be used to hide unauthorized loader code.', 'website-security-radar' ),
+				'recommended_action' => __( 'Compare the file against the trusted theme version and remove it if it is not part of the intended child theme changes.', 'website-security-radar' ),
+				'confidence'         => 'medium',
+				'score'              => 91,
+				'line'               => 18,
+				'demo_deduction'     => 9,
+			),
+			array(
+				'severity'           => 'critical',
+				'type'               => 'potential risk',
+				'path'               => 'wp-content/uploads/2026/04/logo-preview.php',
+				'issue'              => __( 'Uploads file appears to be disguised as media', 'website-security-radar' ),
+				'explanation'        => __( 'The filename looks like media preview content, but the extension is executable PHP inside uploads.', 'website-security-radar' ),
+				'recommended_action' => __( 'Validate the file against the original upload workflow and remove it if it was not created by a trusted process.', 'website-security-radar' ),
+				'confidence'         => 'high',
+				'score'              => 93,
+				'line'               => 1,
+				'demo_deduction'     => 10,
+			),
+			array(
+				'severity'           => 'high',
+				'type'               => 'suspicious pattern',
+				'path'               => 'wp-content/themes/astra/assets/js/customizer-preview.js',
+				'issue'              => __( 'Use of eval() detected in JavaScript', 'website-security-radar' ),
+				'explanation'        => __( 'The script uses eval(), which is risky in frontend code and should be justified or removed.', 'website-security-radar' ),
+				'recommended_action' => __( 'Replace dynamic evaluation with explicit parsing or a trusted data structure where possible.', 'website-security-radar' ),
+				'confidence'         => 'medium',
+				'score'              => 82,
+				'line'               => 88,
+				'demo_deduction'     => 5,
+			),
+			array(
+				'severity'           => 'high',
+				'type'               => 'suspicious pattern',
+				'path'               => 'wp-content/plugins/revslider/includes/cache/render-helper.php',
+				'issue'              => __( 'Suspicious encoded string chain detected', 'website-security-radar' ),
+				'explanation'        => __( 'A long encoded string combined with runtime decoding can be legitimate, but it is also a common concealment pattern.', 'website-security-radar' ),
+				'recommended_action' => __( 'Verify the file against the vendor package and review when the change was introduced.', 'website-security-radar' ),
+				'confidence'         => 'medium',
+				'score'              => 84,
+				'line'               => 143,
+				'demo_deduction'     => 5,
+			),
+			array(
+				'severity'           => 'high',
+				'type'               => 'suspicious pattern',
+				'path'               => 'wp-content/plugins/site-tools/assets/js/admin-sync.js',
+				'issue'              => __( 'Obfuscated JavaScript loader pattern detected', 'website-security-radar' ),
+				'explanation'        => __( 'This script uses fromCharCode-style reconstruction that deserves review in administrative tooling.', 'website-security-radar' ),
+				'recommended_action' => __( 'Confirm the file belongs to a trusted release and remove the loader if the behavior is not expected.', 'website-security-radar' ),
+				'confidence'         => 'medium',
+				'score'              => 80,
+				'line'               => 57,
+				'demo_deduction'     => 4,
+			),
+			array(
+				'severity'           => 'high',
+				'type'               => 'suspicious pattern',
+				'path'               => 'wp-content/plugins/site-tools/includes/class-admin-post-relay.php',
+				'issue'              => __( 'Unexpected admin-post relay detected', 'website-security-radar' ),
+				'explanation'        => __( 'The file registers request handling logic that should be reviewed against the intended plugin feature set.', 'website-security-radar' ),
+				'recommended_action' => __( 'Confirm the handler is part of approved custom code and review recent edits before promoting the release.', 'website-security-radar' ),
+				'confidence'         => 'medium',
+				'score'              => 79,
+				'line'               => 102,
+				'demo_deduction'     => 4,
+			),
+			array(
+				'severity'           => 'medium',
+				'type'               => 'suspicious pattern',
+				'path'               => 'wp-content/plugins/woocommerce/includes/admin/class-wc-admin-dashboard.php',
+				'issue'              => __( 'Encoded payload marker detected in PHP string', 'website-security-radar' ),
+				'explanation'        => __( 'A compact encoded block was found in application code and should be checked against a known-good package.', 'website-security-radar' ),
+				'recommended_action' => __( 'Diff the file against the deployed package and confirm whether the encoded block is expected.', 'website-security-radar' ),
+				'confidence'         => 'medium',
+				'score'              => 71,
+				'line'               => 308,
+				'demo_deduction'     => 2,
+			),
+			array(
+				'severity'           => 'medium',
+				'type'               => 'suspicious pattern',
+				'path'               => 'wp-content/themes/astra-child/footer.php',
+				'issue'              => __( 'Hidden iframe injection pattern detected', 'website-security-radar' ),
+				'explanation'        => __( 'An iframe output pattern appears in the footer template and should be validated against expected marketing or analytics code.', 'website-security-radar' ),
+				'recommended_action' => __( 'Review the footer template change and remove the injection if it was not part of a trusted site customization.', 'website-security-radar' ),
+				'confidence'         => 'medium',
+				'score'              => 68,
+				'line'               => 44,
+				'demo_deduction'     => 2,
+			),
+			array(
+				'severity'           => 'low',
+				'type'               => 'suspicious pattern',
+				'path'               => 'wp-content/themes/astra-child/assets/js/debug-preview.js',
+				'issue'              => __( 'Debug script still uses eval()', 'website-security-radar' ),
+				'explanation'        => __( 'This looks more like leftover debug code than malware, but it should still be cleaned up before release.', 'website-security-radar' ),
+				'recommended_action' => __( 'Remove or refactor the debug script so preview logic does not rely on eval().', 'website-security-radar' ),
+				'confidence'         => 'low',
+				'score'              => 54,
+				'line'               => 12,
+				'demo_deduction'     => 1,
+			),
+			array(
+				'severity'           => 'medium',
+				'type'               => 'hardening',
+				'path'               => 'wp-config.php',
+				'issue'              => __( 'Debug mode is enabled', 'website-security-radar' ),
+				'explanation'        => __( 'Leaving debug mode enabled on a production site can expose paths and operational details.', 'website-security-radar' ),
+				'recommended_action' => __( 'Disable debug display on production and keep any logging restricted to trusted administrators.', 'website-security-radar' ),
+				'confidence'         => 'high',
+				'score'              => 70,
+				'line'               => 96,
+				'demo_deduction'     => 2,
+			),
+			array(
+				'severity'           => 'low',
+				'type'               => 'hardening',
+				'path'               => 'xmlrpc.php',
+				'issue'              => __( 'XML-RPC remains accessible', 'website-security-radar' ),
+				'explanation'        => __( 'XML-RPC may be required for some integrations, but it increases exposure if unused.', 'website-security-radar' ),
+				'recommended_action' => __( 'Restrict or disable XML-RPC if the site does not rely on it for a trusted integration.', 'website-security-radar' ),
+				'confidence'         => 'medium',
+				'score'              => 48,
+				'demo_deduction'     => 1,
+			),
+			array(
+				'severity'           => 'low',
+				'type'               => 'hardening',
+				'path'               => 'wp-admin/plugin-editor.php',
+				'issue'              => __( 'Theme and plugin editor access is enabled', 'website-security-radar' ),
+				'explanation'        => __( 'Allowing code edits in wp-admin increases the blast radius if an administrator account is compromised.', 'website-security-radar' ),
+				'recommended_action' => __( 'Disable the built-in editor on production sites after confirming your deployment workflow.', 'website-security-radar' ),
+				'confidence'         => 'high',
+				'score'              => 46,
+				'demo_deduction'     => 1,
+			),
+			array(
+				'severity'           => 'medium',
+				'type'               => 'cron',
+				'path'               => '',
+				'issue'              => __( 'Suspicious cron hook interval detected', 'website-security-radar' ),
+				'explanation'        => __( 'A custom cron hook is scheduled more frequently than typical content or cache maintenance jobs.', 'website-security-radar' ),
+				'recommended_action' => __( 'Verify the hook owner and confirm the interval matches an approved plugin or custom integration.', 'website-security-radar' ),
+				'confidence'         => 'medium',
+				'score'              => 65,
+				'demo_deduction'     => 2,
+			),
+			array(
+				'severity'           => 'low',
+				'type'               => 'cron',
+				'path'               => '',
+				'issue'              => __( 'Short custom schedule should be reviewed', 'website-security-radar' ),
+				'explanation'        => __( 'A one-minute recurring schedule is not automatically unsafe, but it should be tied to a known operational need.', 'website-security-radar' ),
+				'recommended_action' => __( 'Map the schedule to its owning plugin or custom code before leaving it active in production.', 'website-security-radar' ),
+				'confidence'         => 'low',
+				'score'              => 41,
+				'demo_deduction'     => 1,
+			),
+			array(
+				'severity'           => 'medium',
+				'type'               => 'user security',
+				'path'               => 'wp-admin/users.php',
+				'issue'              => __( 'Recently created administrator account requires review', 'website-security-radar' ),
+				'explanation'        => __( 'New administrator accounts should be confirmed against recent client or team access changes.', 'website-security-radar' ),
+				'recommended_action' => __( 'Verify who created the account, when it was approved, and whether the role is still required.', 'website-security-radar' ),
+				'confidence'         => 'high',
+				'score'              => 67,
+				'demo_deduction'     => 2,
+			),
+		);
+
+		foreach ( $issues as $index => &$issue ) {
+			$issue['id']          = 'demo-' . substr( hash( 'sha256', $seed . '|' . $index . '|' . $issue['issue'] ), 0, 12 );
+			$issue['detected_at'] = gmdate( 'c', strtotime( $scanned_at ) - $offsets[ $index ] );
+		}
+		unset( $issue );
+
+		return $issues;
+	}
+
+	private static function build_demo_score_breakdown( array $issues ): array {
+		$categories = array();
+
+		foreach ( self::get_score_breakdown_categories() as $key => $label ) {
+			$categories[ $key ] = array(
+				'label'           => $label,
+				'deduction'       => 0,
+				'issue_count'     => 0,
+				'severity_counts' => array(
+					'critical' => 0,
+					'high'     => 0,
+					'medium'   => 0,
+					'low'      => 0,
+				),
+			);
+		}
+
+		$total = 0;
+
+		foreach ( $issues as $issue ) {
+			$category  = self::get_score_category( $issue );
+			$severity  = self::sanitize_severity( (string) ( $issue['severity'] ?? 'low' ) );
+			$deduction = (int) ( $issue['demo_deduction'] ?? 0 );
+
+			if ( ! isset( $categories[ $category ] ) ) {
+				continue;
+			}
+
+			$categories[ $category ]['deduction'] += $deduction;
+			++$categories[ $category ]['issue_count'];
+			++$categories[ $category ]['severity_counts'][ $severity ];
+			$total += $deduction;
+		}
+
+		return array(
+			'score'                  => max( 0, min( 100, 100 - $total ) ),
+			'total_deduction'        => $total,
+			'deduction_per_severity' => array(
+				'critical' => 10,
+				'high'     => 5,
+				'medium'   => 2,
+				'low'      => 1,
+			),
+			'categories'             => $categories,
+		);
+	}
+
+	private static function count_demo_suspicious_files( array $issues ): int {
+		$paths = array();
+
+		foreach ( $issues as $issue ) {
+			$type = strtolower( (string) ( $issue['type'] ?? '' ) );
+
+			if ( ! in_array( $type, array( 'malware', 'suspicious pattern', 'potential risk' ), true ) ) {
+				continue;
+			}
+
+			if ( 'suspicious pattern' === $type && 'low' === strtolower( (string) ( $issue['severity'] ?? '' ) ) ) {
+				continue;
+			}
+
+			$path = self::normalize_relative_path( (string) ( $issue['path'] ?? $issue['file'] ?? '' ) );
+
+			if ( '' !== $path ) {
+				$paths[ $path ] = true;
+			}
+		}
+
+		return count( $paths );
+	}
+
+	private static function count_demo_issues_by_type( array $issues, array $types ): int {
+		return count(
+			array_filter(
+				$issues,
+				static function ( array $issue ) use ( $types ): bool {
+					return in_array( strtolower( (string) ( $issue['type'] ?? '' ) ), $types, true );
+				}
+			)
+		);
+	}
+
+	private static function get_demo_seed(): int {
+		$home = function_exists( 'home_url' ) ? home_url( '/' ) : 'demo';
+		return abs( (int) sprintf( '%u', crc32( strtolower( (string) $home ) ) ) );
+	}
+
+	private static function bounded_int( int $seed, string $key, int $min, int $max ): int {
+		if ( $max <= $min ) {
+			return $min;
+		}
+
+		$value = abs( (int) sprintf( '%u', crc32( $seed . '|' . $key ) ) );
+		return $min + ( $value % ( $max - $min + 1 ) );
 	}
 
 	private static function get_score_category( array $issue ): string {
