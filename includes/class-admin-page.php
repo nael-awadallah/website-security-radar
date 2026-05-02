@@ -86,85 +86,141 @@ class WSR_Admin_Page {
 		$score_breakdown    = $this->normalize_score_breakdown( $results['score_breakdown'] ?? array() );
 		$top_critical_issue = $this->get_top_issue( $results['issues'] ?? array(), 'critical' );
 		$active_baseline    = $this->plugin->get_active_baseline();
+		$settings           = WSR_Helpers::get_settings();
+		$score              = (int) ( $results['score'] ?? 100 );
+		$risk_level         = strtolower( (string) ( $results['risk_level'] ?? 'safe' ) );
+		$recommendations    = $this->get_recommendations( $results );
+		$stat_cards         = $this->get_dashboard_stat_cards( $summary );
+		$scan_summary       = $this->get_dashboard_scan_summary( $results, $active_baseline, $settings );
 		?>
 		<div class="wrap wsr-wrap">
 			<?php $this->render_header( __( 'Dashboard', 'website-security-radar' ) ); ?>
 			<?php $this->render_notices(); ?>
-			<div class="wsr-grid wsr-grid-main">
-				<div class="wsr-card wsr-card-score">
-					<div class="wsr-score-ring wsr-risk-<?php echo esc_attr( strtolower( $results['risk_level'] ?? 'safe' ) ); ?>">
-						<span><?php echo esc_html( (string) ( $results['score'] ?? 100 ) ); ?></span>
-					</div>
-					<div>
-						<h2><?php esc_html_e( 'Security score', 'website-security-radar' ); ?></h2>
-						<p class="wsr-risk-text"><?php echo esc_html( $results['risk_level'] ?? 'Safe' ); ?></p>
-						<p><?php echo esc_html( sprintf( __( 'Last scan: %s', 'website-security-radar' ), WSR_Helpers::format_datetime( $results['scanned_at'] ?? '' ) ) ); ?></p>
-						<?php if ( $top_critical_issue ) : ?>
-							<p class="wsr-inline-alert">
-								<strong><?php esc_html_e( 'Top critical issue:', 'website-security-radar' ); ?></strong>
-								<?php echo esc_html( $top_critical_issue['issue'] ); ?>
+			<div class="wsr-dashboard-layout">
+				<div class="wsr-dashboard-main">
+					<div class="wsr-card wsr-card-score wsr-card-score-<?php echo esc_attr( $risk_level ); ?>">
+						<div class="wsr-score-copy">
+							<div class="wsr-section-eyebrow"><?php esc_html_e( 'Security posture', 'website-security-radar' ); ?></div>
+							<h2><?php esc_html_e( 'Security score', 'website-security-radar' ); ?></h2>
+							<p class="wsr-risk-text"><?php echo esc_html( $results['risk_level'] ?? 'Safe' ); ?></p>
+							<p class="wsr-score-summary">
+								<?php
+								echo esc_html(
+									sprintf(
+										__( 'Score impacted by: %1$d critical issues, %2$d suspicious files', 'website-security-radar' ),
+										(int) ( $summary['critical_issues'] ?? 0 ),
+										(int) ( $summary['suspicious_files'] ?? 0 )
+									)
+								);
+								?>
 							</p>
-						<?php endif; ?>
+							<div class="wsr-score-meta">
+								<span><?php echo esc_html( sprintf( __( 'Last scan: %s', 'website-security-radar' ), WSR_Helpers::format_datetime( $results['scanned_at'] ?? '' ) ) ); ?></span>
+								<span><?php echo esc_html( $this->get_dashboard_trend_hint() ); ?></span>
+							</div>
+							<?php if ( $top_critical_issue ) : ?>
+								<p class="wsr-inline-alert">
+									<strong><?php esc_html_e( 'Top critical issue:', 'website-security-radar' ); ?></strong>
+									<?php echo esc_html( $top_critical_issue['issue'] ); ?>
+								</p>
+							<?php endif; ?>
+						</div>
+						<div class="wsr-score-visual">
+							<div class="wsr-score-ring wsr-risk-<?php echo esc_attr( $risk_level ); ?>" style="--wsr-score: <?php echo esc_attr( (string) max( 0, min( 100, $score ) ) ); ?>;">
+								<span><?php echo esc_html( (string) $score ); ?></span>
+								<small>/100</small>
+							</div>
+						</div>
 					</div>
-				</div>
-				<div class="wsr-card wsr-card-actions">
-					<h2><?php esc_html_e( 'Actions', 'website-security-radar' ); ?></h2>
-					<p><?php esc_html_e( 'Run an on-demand scan or refresh the known-good baseline.', 'website-security-radar' ); ?></p>
-					<div class="wsr-setting-row wsr-setting-field">
-						<label class="wsr-setting-heading" for="wsr-baseline-label"><?php esc_html_e( 'Baseline label', 'website-security-radar' ); ?></label>
-						<input id="wsr-baseline-label" type="text" class="regular-text" value="<?php echo esc_attr( WSR_Helpers::get_default_baseline_label() ); ?>" placeholder="<?php echo esc_attr( WSR_Helpers::get_default_baseline_label() ); ?>" />
-					</div>
-					<div class="wsr-actions">
-						<button type="button" class="button button-primary wsr-ajax-button" data-wsr-action="scan"><?php esc_html_e( 'Manual Scan', 'website-security-radar' ); ?></button>
-						<button type="button" class="button wsr-ajax-button" data-wsr-action="baseline"><?php esc_html_e( 'Create Baseline', 'website-security-radar' ); ?></button>
-					</div>
-					<div class="wsr-card-meta">
-						<span><?php echo esc_html( sprintf( __( '%d files scanned', 'website-security-radar' ), (int) ( $summary['total_scanned_files'] ?? 0 ) ) ); ?></span>
-						<span><?php echo esc_html( sprintf( __( '%d active issues', 'website-security-radar' ), count( $results['issues'] ?? array() ) ) ); ?></span>
-						<?php if ( ! empty( $active_baseline['label'] ) ) : ?>
-							<span><?php echo esc_html( sprintf( __( 'Active baseline: %s', 'website-security-radar' ), $active_baseline['label'] ) ); ?></span>
-						<?php endif; ?>
-					</div>
-				</div>
-			</div>
-			<div class="wsr-grid wsr-grid-stats">
-				<?php
-				$cards = array(
-					'total_scanned_files' => __( 'Total scanned files', 'website-security-radar' ),
-					'new_files'           => __( 'New files', 'website-security-radar' ),
-					'modified_files'      => __( 'Modified files', 'website-security-radar' ),
-					'deleted_files'       => __( 'Deleted files', 'website-security-radar' ),
-					'suspicious_files'    => __( 'Suspicious files', 'website-security-radar' ),
-					'hardening_warnings'  => __( 'Hardening warnings', 'website-security-radar' ),
-					'critical_issues'     => __( 'Critical issues', 'website-security-radar' ),
-				);
-
-				foreach ( $cards as $key => $label ) :
-					?>
-					<div class="wsr-card wsr-stat-card">
-						<span class="wsr-stat-value"><?php echo esc_html( (string) ( $summary[ $key ] ?? 0 ) ); ?></span>
-						<span class="wsr-stat-label"><?php echo esc_html( $label ); ?></span>
-					</div>
-				<?php endforeach; ?>
-			</div>
-			<div class="wsr-grid wsr-grid-main">
-				<div class="wsr-card">
-					<h2><?php esc_html_e( 'Score Breakdown', 'website-security-radar' ); ?></h2>
-					<p><?php echo esc_html( sprintf( __( 'Score: %1$d/100 with %2$d total deduction points.', 'website-security-radar' ), (int) ( $score_breakdown['score'] ?? 100 ), (int) ( $score_breakdown['total_deduction'] ?? 0 ) ) ); ?></p>
-					<p><?php esc_html_e( 'Deductions: Critical -20, High -10, Medium -5, Low -2.', 'website-security-radar' ); ?></p>
-					<?php $this->render_score_breakdown_list( $score_breakdown ); ?>
-				</div>
-				<div class="wsr-card">
-					<h2><?php esc_html_e( 'Quick recommendations', 'website-security-radar' ); ?></h2>
-					<ul class="wsr-compact-list">
-						<?php foreach ( $this->get_recommendations( $results ) as $recommendation ) : ?>
-							<li><?php echo esc_html( $recommendation ); ?></li>
+					<div class="wsr-grid wsr-grid-stats">
+						<?php foreach ( $stat_cards as $card ) : ?>
+							<div class="wsr-card wsr-stat-card wsr-stat-card-<?php echo esc_attr( $card['tone'] ); ?>">
+								<div class="wsr-stat-icon-wrap">
+									<span class="dashicons <?php echo esc_attr( $card['icon'] ); ?>" aria-hidden="true"></span>
+								</div>
+								<div class="wsr-stat-copy">
+									<span class="wsr-stat-label"><?php echo esc_html( $card['label'] ); ?></span>
+									<span class="wsr-stat-value"><?php echo esc_html( (string) $card['value'] ); ?></span>
+									<span class="wsr-stat-helper"><?php echo esc_html( $card['helper'] ); ?></span>
+								</div>
+							</div>
 						<?php endforeach; ?>
-					</ul>
+					</div>
+					<div class="wsr-card">
+						<div class="wsr-section-head">
+							<div>
+								<div class="wsr-section-eyebrow"><?php esc_html_e( 'Priority queue', 'website-security-radar' ); ?></div>
+								<h2><?php esc_html_e( 'Top critical issues', 'website-security-radar' ); ?></h2>
+								<p><?php esc_html_e( 'Focus on the highest-severity findings first.', 'website-security-radar' ); ?></p>
+							</div>
+							<a class="wsr-text-link" href="<?php echo esc_url( WSR_Helpers::admin_url( 'website-security-radar-results' ) ); ?>"><?php esc_html_e( 'View all issues', 'website-security-radar' ); ?> <span aria-hidden="true">&rarr;</span></a>
+						</div>
+						<?php $this->render_top_issues_list( $results['issues'] ?? array() ); ?>
+					</div>
+					<div class="wsr-card">
+						<div class="wsr-section-head">
+							<div>
+								<div class="wsr-section-eyebrow"><?php esc_html_e( 'Score details', 'website-security-radar' ); ?></div>
+								<h2><?php esc_html_e( 'Score breakdown', 'website-security-radar' ); ?></h2>
+								<p><?php echo esc_html( sprintf( __( 'Score: %1$d/100 with %2$d total deduction points.', 'website-security-radar' ), (int) ( $score_breakdown['score'] ?? 100 ), (int) ( $score_breakdown['total_deduction'] ?? 0 ) ) ); ?></p>
+							</div>
+						</div>
+						<?php $this->render_score_breakdown_list( $score_breakdown ); ?>
+					</div>
 				</div>
-				<div class="wsr-card">
-					<h2><?php esc_html_e( 'Top 5 Critical Issues', 'website-security-radar' ); ?></h2>
-					<?php $this->render_top_issues_list( $results['issues'] ?? array() ); ?>
+				<div class="wsr-dashboard-sidebar">
+					<div class="wsr-card">
+						<div class="wsr-section-eyebrow"><?php esc_html_e( 'Recommended next steps', 'website-security-radar' ); ?></div>
+						<h2><?php esc_html_e( 'Quick recommendations', 'website-security-radar' ); ?></h2>
+						<div class="wsr-recommendation-list">
+							<?php foreach ( $recommendations as $recommendation ) : ?>
+								<div class="wsr-recommendation-card wsr-recommendation-<?php echo esc_attr( $recommendation['tone'] ); ?>">
+									<div class="wsr-recommendation-icon" aria-hidden="true"><?php echo esc_html( $recommendation['icon'] ); ?></div>
+									<div class="wsr-recommendation-copy">
+										<strong><?php echo esc_html( $recommendation['title'] ); ?></strong>
+										<p><?php echo esc_html( $recommendation['description'] ); ?></p>
+									</div>
+								</div>
+							<?php endforeach; ?>
+						</div>
+					</div>
+					<div class="wsr-card wsr-card-actions" data-wsr-actions-card>
+						<div>
+							<div class="wsr-section-eyebrow"><?php esc_html_e( 'Controls', 'website-security-radar' ); ?></div>
+							<h2><?php esc_html_e( 'Actions', 'website-security-radar' ); ?></h2>
+							<p><?php esc_html_e( 'Run a fresh scan or save the current trusted state as your baseline.', 'website-security-radar' ); ?></p>
+						</div>
+						<div class="wsr-setting-row wsr-setting-field">
+							<label class="wsr-setting-heading" for="wsr-baseline-label"><?php esc_html_e( 'Baseline label', 'website-security-radar' ); ?></label>
+							<input id="wsr-baseline-label" type="text" class="regular-text" value="<?php echo esc_attr( WSR_Helpers::get_default_baseline_label() ); ?>" placeholder="<?php echo esc_attr( WSR_Helpers::get_default_baseline_label() ); ?>" />
+						</div>
+						<div class="wsr-action-stack">
+							<div class="wsr-action-item">
+								<button type="button" class="button button-primary wsr-ajax-button" data-wsr-action="scan"><?php esc_html_e( 'Run Scan', 'website-security-radar' ); ?></button>
+								<p><?php esc_html_e( 'Start an on-demand scan of monitored files and hardening checks.', 'website-security-radar' ); ?></p>
+							</div>
+							<div class="wsr-action-item">
+								<button type="button" class="button button-secondary wsr-ajax-button" data-wsr-action="baseline"><?php esc_html_e( 'Create Baseline', 'website-security-radar' ); ?></button>
+								<p><?php esc_html_e( 'Capture the current trusted state for future change comparisons.', 'website-security-radar' ); ?></p>
+							</div>
+						</div>
+						<div class="wsr-card-meta">
+							<span><?php echo esc_html( sprintf( __( '%d files scanned', 'website-security-radar' ), (int) ( $summary['total_scanned_files'] ?? 0 ) ) ); ?></span>
+							<span><?php echo esc_html( sprintf( __( '%d active issues', 'website-security-radar' ), count( $results['issues'] ?? array() ) ) ); ?></span>
+						</div>
+					</div>
+					<div class="wsr-card">
+						<div class="wsr-section-eyebrow"><?php esc_html_e( 'Operational view', 'website-security-radar' ); ?></div>
+						<h2><?php esc_html_e( 'Scan summary', 'website-security-radar' ); ?></h2>
+						<div class="wsr-summary-list">
+							<?php foreach ( $scan_summary as $item ) : ?>
+								<div class="wsr-summary-item">
+									<span class="wsr-summary-label"><?php echo esc_html( $item['label'] ); ?></span>
+									<strong class="wsr-summary-value"><?php echo esc_html( $item['value'] ); ?></strong>
+								</div>
+							<?php endforeach; ?>
+						</div>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -1007,60 +1063,188 @@ class WSR_Admin_Page {
 		return null;
 	}
 
+	private function get_dashboard_trend_hint(): string {
+		return __( 'Compared to last scan: unavailable', 'website-security-radar' );
+	}
+
+	private function get_dashboard_stat_cards( array $summary ): array {
+		return array(
+			array(
+				'label'  => __( 'Files scanned', 'website-security-radar' ),
+				'value'  => (int) ( $summary['total_scanned_files'] ?? 0 ),
+				'helper' => __( 'Coverage across monitored WordPress paths.', 'website-security-radar' ),
+				'icon'   => 'dashicons-search',
+				'tone'   => 'neutral',
+			),
+			array(
+				'label'  => __( 'Suspicious files', 'website-security-radar' ),
+				'value'  => (int) ( $summary['suspicious_files'] ?? 0 ),
+				'helper' => __( 'Potential malware, risky patterns, or unexpected file changes.', 'website-security-radar' ),
+				'icon'   => 'dashicons-warning',
+				'tone'   => ! empty( $summary['suspicious_files'] ) ? 'warning' : 'safe',
+			),
+			array(
+				'label'  => __( 'Critical issues', 'website-security-radar' ),
+				'value'  => (int) ( $summary['critical_issues'] ?? 0 ),
+				'helper' => __( 'Immediate review recommended before the next deployment or login cycle.', 'website-security-radar' ),
+				'icon'   => 'dashicons-shield-alt',
+				'tone'   => ! empty( $summary['critical_issues'] ) ? 'critical' : 'safe',
+			),
+			array(
+				'label'  => __( 'Hardening warnings', 'website-security-radar' ),
+				'value'  => (int) ( $summary['hardening_warnings'] ?? 0 ),
+				'helper' => __( 'Configuration gaps that weaken the overall site posture.', 'website-security-radar' ),
+				'icon'   => 'dashicons-lock',
+				'tone'   => ! empty( $summary['hardening_warnings'] ) ? 'warning' : 'safe',
+			),
+		);
+	}
+
+	private function get_dashboard_scan_summary( array $results, array $active_baseline, array $settings ): array {
+		$summary = $results['summary'] ?? array();
+
+		return array(
+			array(
+				'label' => __( 'Latest scan', 'website-security-radar' ),
+				'value' => WSR_Helpers::format_datetime( $results['scanned_at'] ?? '' ),
+			),
+			array(
+				'label' => __( 'Risk level', 'website-security-radar' ),
+				'value' => (string) ( $results['risk_level'] ?? __( 'Safe', 'website-security-radar' ) ),
+			),
+			array(
+				'label' => __( 'Active baseline', 'website-security-radar' ),
+				'value' => ! empty( $active_baseline['label'] ) ? (string) $active_baseline['label'] : __( 'Not configured', 'website-security-radar' ),
+			),
+			array(
+				'label' => __( 'Scheduled scans', 'website-security-radar' ),
+				'value' => ! empty( $settings['enable_scheduled_scan'] ) ? __( 'Enabled', 'website-security-radar' ) : __( 'Disabled', 'website-security-radar' ),
+			),
+			array(
+				'label' => __( 'Deduction points', 'website-security-radar' ),
+				'value' => sprintf( __( '%d points', 'website-security-radar' ), (int) ( $results['score_breakdown']['total_deduction'] ?? 0 ) ),
+			),
+			array(
+				'label' => __( 'Ignored findings', 'website-security-radar' ),
+				'value' => sprintf( __( '%d items', 'website-security-radar' ), (int) ( $summary['ignored_findings'] ?? 0 ) ),
+			),
+		);
+	}
+
 	private function get_recommendations( array $results ): array {
 		$recommendations = array();
 		$summary         = $results['summary'] ?? array();
 		$top_issue       = $this->get_top_issue( $results['issues'] ?? array() );
+		$settings        = WSR_Helpers::get_settings();
 
 		if ( ! empty( $summary['critical_issues'] ) ) {
-			$recommendations[] = __( 'Review critical issues first and confirm whether affected files are expected.', 'website-security-radar' );
+			$recommendations[] = array(
+				'icon'        => '!',
+				'tone'        => 'critical',
+				'title'       => __( 'Review critical issues', 'website-security-radar' ),
+				'description' => __( 'Triage the highest-severity findings first and confirm whether the affected files are expected.', 'website-security-radar' ),
+			);
 		}
 
 		if ( $top_issue ) {
-			$recommendations[] = sprintf(
-				/* translators: %s: issue label. */
-				__( 'Prioritize: %s.', 'website-security-radar' ),
-				$top_issue['issue']
+			$recommendations[] = array(
+				'icon'        => '>',
+				'tone'        => 'warning',
+				'title'       => __( 'Prioritize the top finding', 'website-security-radar' ),
+				'description' => sprintf(
+					/* translators: %s: issue label. */
+					__( 'Start with: %s.', 'website-security-radar' ),
+					$top_issue['issue']
+				),
 			);
 		}
 
 		if ( ! empty( $summary['modified_files'] ) ) {
-			$recommendations[] = __( 'Compare modified files against your deployment or backup source of truth.', 'website-security-radar' );
+			$recommendations[] = array(
+				'icon'        => '~',
+				'tone'        => 'warning',
+				'title'       => __( 'Verify modified files', 'website-security-radar' ),
+				'description' => __( 'Compare changed files against your deployment source or backup before marking them as trusted.', 'website-security-radar' ),
+			);
 		}
 
 		if ( empty( $results['baseline']['has_baseline'] ?? false ) ) {
-			$recommendations[] = __( 'Create a baseline after confirming the current site state is trusted.', 'website-security-radar' );
+			$recommendations[] = array(
+				'icon'        => '+',
+				'tone'        => 'warning',
+				'title'       => __( 'Create a baseline', 'website-security-radar' ),
+				'description' => __( 'Save a clean snapshot after validation so future scans can separate expected changes from real drift.', 'website-security-radar' ),
+			);
+		}
+
+		if ( empty( $settings['enable_scheduled_scan'] ) ) {
+			$recommendations[] = array(
+				'icon'        => '*',
+				'tone'        => 'warning',
+				'title'       => __( 'Enable scheduled scans', 'website-security-radar' ),
+				'description' => __( 'Automatic daily scans keep your monitoring current between manual reviews.', 'website-security-radar' ),
+			);
 		}
 
 		if ( empty( $recommendations ) ) {
-			$recommendations[] = __( 'Keep scheduled scans enabled and review updates regularly.', 'website-security-radar' );
+			$recommendations[] = array(
+				'icon'        => 'o',
+				'tone'        => 'safe',
+				'title'       => __( 'Monitoring looks healthy', 'website-security-radar' ),
+				'description' => __( 'Scheduled scans are enabled and no urgent follow-up actions are currently required.', 'website-security-radar' ),
+			);
 		}
 
-		return $recommendations;
+		return array_slice( $recommendations, 0, 4 );
 	}
 
 	private function render_top_issues_list( array $issues ): void {
 		$top_issues = $this->get_top_five_issues( $issues );
 
 		if ( empty( $top_issues ) ) {
-			echo '<p>' . esc_html__( 'No critical or high-priority issues recorded yet.', 'website-security-radar' ) . '</p>';
+			?>
+			<div class="wsr-empty-state">
+				<span class="dashicons dashicons-yes-alt" aria-hidden="true"></span>
+				<div>
+					<strong><?php esc_html_e( 'No urgent issues detected', 'website-security-radar' ); ?></strong>
+					<p><?php esc_html_e( 'Critical and high-priority findings will appear here after future scans.', 'website-security-radar' ); ?></p>
+				</div>
+			</div>
+			<?php
 			return;
 		}
 		?>
 		<div class="wsr-top-issues">
 			<?php foreach ( $top_issues as $issue ) : ?>
+				<?php
+				$display_path = WSR_Helpers::get_safe_display_path( (string) ( $issue['path'] ?? $issue['file'] ?? '' ) );
+				$detail_id    = 'wsr-issue-detail-' . sanitize_html_class( (string) ( $issue['id'] ?? md5( $display_path ) ) );
+				?>
 				<div class="wsr-top-issue">
 					<div class="wsr-top-issue-main">
 						<div class="wsr-top-issue-head">
-							<span class="<?php echo esc_attr( WSR_Helpers::severity_label_class( (string) $issue['severity'] ) ); ?>"><?php echo esc_html( ucfirst( (string) $issue['severity'] ) ); ?></span>
+							<span class="<?php echo esc_attr( WSR_Helpers::severity_label_class( (string) $issue['severity'] ) ); ?>" title="<?php echo esc_attr( ucfirst( (string) $issue['severity'] ) . ' severity' ); ?>"><?php echo esc_html( ucfirst( (string) $issue['severity'] ) ); ?></span>
 							<span class="wsr-type-pill"><?php echo esc_html( WSR_Helpers::get_type_label( (string) ( $issue['type'] ?? '' ) ) ); ?></span>
 						</div>
 						<strong><?php echo esc_html( (string) $issue['issue'] ); ?></strong>
-						<?php $display_path = (string) ( $issue['path'] ?? $issue['file'] ?? '' ); ?>
 						<code class="wsr-path" title="<?php echo esc_attr( $display_path ); ?>"><?php echo esc_html( $display_path ); ?></code>
 						<p><?php echo esc_html( (string) $issue['explanation'] ); ?></p>
+						<div id="<?php echo esc_attr( $detail_id ); ?>" class="wsr-top-issue-detail" hidden>
+							<?php if ( ! empty( $issue['confidence'] ) ) : ?>
+								<p><?php echo esc_html( sprintf( __( 'Confidence: %s', 'website-security-radar' ), ucfirst( (string) $issue['confidence'] ) ) ); ?></p>
+							<?php endif; ?>
+							<?php if ( ! empty( $issue['detected_at'] ) ) : ?>
+								<p><?php echo esc_html( sprintf( __( 'Detected: %s', 'website-security-radar' ), WSR_Helpers::format_datetime( (string) $issue['detected_at'] ) ) ); ?></p>
+							<?php endif; ?>
+							<?php if ( isset( $issue['score'] ) ) : ?>
+								<p><?php echo esc_html( sprintf( __( 'Signal score: %d', 'website-security-radar' ), (int) $issue['score'] ) ); ?></p>
+							<?php endif; ?>
+						</div>
 					</div>
-					<a class="button button-small" href="<?php echo esc_url( WSR_Helpers::admin_url( 'website-security-radar-results', array( 'issue' => $issue['id'] ) ) ); ?>"><?php esc_html_e( 'View', 'website-security-radar' ); ?></a>
+					<div class="wsr-top-issue-actions">
+						<button type="button" class="button button-secondary button-small wsr-issue-toggle" data-wsr-toggle-target="<?php echo esc_attr( $detail_id ); ?>" aria-expanded="false"><?php esc_html_e( 'Details', 'website-security-radar' ); ?></button>
+						<a class="button button-small" href="<?php echo esc_url( WSR_Helpers::admin_url( 'website-security-radar-results', array( 'issue' => $issue['id'] ) ) ); ?>"><?php esc_html_e( 'View', 'website-security-radar' ); ?></a>
+					</div>
 				</div>
 			<?php endforeach; ?>
 		</div>
