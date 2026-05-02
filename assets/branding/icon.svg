@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <!-- Shield body -->
+  <path d="M24 4L8 10v12c0 9.6 6.8 18.6 16 20.9C33.2 40.6 40 31.6 40 22V10L24 4z"
+        fill="#0EA5E9" opacity=".15"/>
+  <path d="M24 4L8 10v12c0 9.6 6.8 18.6 16 20.9C33.2 40.6 40 31.6 40 22V10L24 4z"
+        stroke="#0EA5E9" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+  <!-- Radar circles -->
+  <circle cx="24" cy="22" r="3" fill="#0EA5E9"/>
+  <circle cx="24" cy="22" r="7" stroke="#0EA5E9" stroke-width="1.5" opacity=".7" stroke-dasharray="2 1.5"/>
+  <circle cx="24" cy="22" r="12" stroke="#0EA5E9" stroke-width="1.2" opacity=".4" stroke-dasharray="2 2"/>
+  <!-- Radar sweep line -->
+  <line x1="24" y1="22" x2="32" y2="14" stroke="#22C55E" stroke-width="2" stroke-linecap="round"/>
+  <!-- Pulse dot at sweep tip -->
+  <circle cx="32" cy="14" r="2" fill="#22C55E"/>
+</svg>
