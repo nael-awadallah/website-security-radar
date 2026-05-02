@@ -80,7 +80,7 @@ class WSR_Admin_Page {
 					'scanning'   => __( 'Running scan...', 'website-security-radar' ),
 					'baselining' => __( 'Creating baseline...', 'website-security-radar' ),
 					'vulnerabilityChecking' => __( 'Running vulnerability check...', 'website-security-radar' ),
-					'showDetails'=> __( 'Details', 'website-security-radar' ),
+					'showDetails'=> __( 'View details', 'website-security-radar' ),
 					'hideDetails'=> __( 'Hide details', 'website-security-radar' ),
 					'success'    => __( 'Action completed.', 'website-security-radar' ),
 					'error'      => __( 'Request failed.', 'website-security-radar' ),
@@ -92,6 +92,7 @@ class WSR_Admin_Page {
 	public function render_dashboard_page(): void {
 		$this->assert_capability();
 		$results            = $this->plugin->get_latest_results();
+		$previous_results   = $this->plugin->get_previous_results();
 		$summary            = $results['summary'] ?? array();
 		$score_breakdown    = $this->normalize_score_breakdown( $results['score_breakdown'] ?? array() );
 		$top_critical_issue = $this->get_top_issue( $results['issues'] ?? array(), 'critical' );
@@ -112,7 +113,7 @@ class WSR_Admin_Page {
 					<div class="wsr-card wsr-card-score wsr-card-score-<?php echo esc_attr( $risk_level ); ?>">
 						<div class="wsr-score-copy">
 							<div class="wsr-section-eyebrow"><?php esc_html_e( 'Security posture', 'website-security-radar' ); ?></div>
-							<h2><?php esc_html_e( 'Security score', 'website-security-radar' ); ?></h2>
+							<h2><?php esc_html_e( 'Security Score (0–100)', 'website-security-radar' ); ?></h2>
 							<p class="wsr-risk-text"><?php echo esc_html( $results['risk_level'] ?? 'Safe' ); ?></p>
 							<p class="wsr-score-summary">
 								<?php
@@ -127,7 +128,7 @@ class WSR_Admin_Page {
 							</p>
 							<div class="wsr-score-meta">
 								<span><?php echo esc_html( sprintf( __( 'Last scan: %s', 'website-security-radar' ), WSR_Helpers::format_datetime( $results['scanned_at'] ?? '' ) ) ); ?></span>
-								<span><?php echo esc_html( $this->get_dashboard_trend_hint() ); ?></span>
+								<span><?php echo esc_html( $this->get_dashboard_trend_hint( $results, $previous_results ) ); ?></span>
 							</div>
 							<?php if ( $top_critical_issue ) : ?>
 								<p class="wsr-inline-alert">
@@ -137,7 +138,7 @@ class WSR_Admin_Page {
 							<?php endif; ?>
 						</div>
 						<div class="wsr-score-visual">
-							<div class="wsr-score-ring wsr-risk-<?php echo esc_attr( $risk_level ); ?><?php echo 0 === $score_display ? ' wsr-score-ring-zero' : ''; ?>" style="--wsr-score: <?php echo esc_attr( (string) $score_display ); ?>; --wsr-score-angle: <?php echo esc_attr( (string) ( $score_display * 3.6 ) ); ?>deg;" aria-label="<?php echo esc_attr( sprintf( __( 'Security score: %d out of 100', 'website-security-radar' ), $score_display ) ); ?>">
+							<div class="wsr-score-ring wsr-risk-<?php echo esc_attr( $risk_level ); ?><?php echo 0 === $score_display ? ' wsr-score-ring-zero' : ''; ?>" style="--wsr-score: <?php echo esc_attr( (string) $score_display ); ?>; --wsr-score-angle: <?php echo esc_attr( (string) ( $score_display * 3.6 ) ); ?>deg;" aria-label="<?php echo esc_attr( sprintf( __( 'Security Score: %d out of 100', 'website-security-radar' ), $score_display ) ); ?>">
 								<span><?php echo esc_html( (string) $score_display ); ?></span>
 								<small>/100</small>
 							</div>
@@ -145,7 +146,7 @@ class WSR_Admin_Page {
 					</div>
 					<div class="wsr-grid wsr-grid-stats">
 						<?php foreach ( $stat_cards as $card ) : ?>
-							<div class="wsr-card wsr-stat-card wsr-stat-card-<?php echo esc_attr( $card['tone'] ); ?>">
+							<div class="wsr-card wsr-stat-card wsr-stat-card-<?php echo esc_attr( $card['tone'] ); ?>" title="<?php echo esc_attr( $card['helper'] ); ?>">
 								<div class="wsr-stat-icon-wrap">
 									<span class="dashicons <?php echo esc_attr( $card['icon'] ); ?>" aria-hidden="true"></span>
 								</div>
@@ -172,7 +173,8 @@ class WSR_Admin_Page {
 						<div class="wsr-section-head">
 							<div>
 								<div class="wsr-section-eyebrow"><?php esc_html_e( 'Score details', 'website-security-radar' ); ?></div>
-								<h2><?php esc_html_e( 'Score breakdown', 'website-security-radar' ); ?></h2>
+								<h2><?php esc_html_e( 'Score Breakdown', 'website-security-radar' ); ?></h2>
+								<p class="description" title="<?php echo esc_attr__( 'The score starts at 100 and deducts points based on severity, category, and active findings.', 'website-security-radar' ); ?>"><?php esc_html_e( 'How score is calculated', 'website-security-radar' ); ?></p>
 								<p><?php echo esc_html( sprintf( __( 'Score: %1$d/100 with %2$d total deduction points.', 'website-security-radar' ), (int) ( $score_breakdown['score'] ?? 100 ), (int) ( $score_breakdown['total_deduction'] ?? 0 ) ) ); ?></p>
 							</div>
 						</div>
@@ -1163,8 +1165,32 @@ class WSR_Admin_Page {
 		return null;
 	}
 
-	private function get_dashboard_trend_hint(): string {
-		return __( 'Compared to last scan: unavailable', 'website-security-radar' );
+	private function get_dashboard_trend_hint( array $results, array $previous_results ): string {
+		if ( empty( $previous_results['scanned_at'] ) || ( $previous_results['scanned_at'] ?? '' ) === ( $results['scanned_at'] ?? '' ) ) {
+			return __( 'Compared to last scan: unavailable', 'website-security-radar' );
+		}
+
+		$current_score  = (int) ( $results['score'] ?? 100 );
+		$previous_score = (int) ( $previous_results['score'] ?? 100 );
+		$difference     = $current_score - $previous_score;
+
+		if ( 0 === $difference ) {
+			return __( 'Compared to last scan: unchanged', 'website-security-radar' );
+		}
+
+		if ( $difference > 0 ) {
+			return sprintf(
+				/* translators: %d: score increase. */
+				__( 'Compared to last scan: up %d points', 'website-security-radar' ),
+				$difference
+			);
+		}
+
+		return sprintf(
+			/* translators: %d: score decrease. */
+			__( 'Compared to last scan: down %d points', 'website-security-radar' ),
+			abs( $difference )
+		);
 	}
 
 	private function get_dashboard_stat_cards( array $summary ): array {
@@ -1172,35 +1198,35 @@ class WSR_Admin_Page {
 			array(
 				'label'  => __( 'Files scanned', 'website-security-radar' ),
 				'value'  => (int) ( $summary['total_scanned_files'] ?? 0 ),
-				'helper' => __( 'Coverage across monitored WordPress paths.', 'website-security-radar' ),
+				'helper' => __( 'Total files checked in the selected scan scope.', 'website-security-radar' ),
 				'icon'   => 'dashicons-search',
 				'tone'   => 'neutral',
 			),
 			array(
 				'label'  => __( 'Suspicious files', 'website-security-radar' ),
 				'value'  => (int) ( $summary['suspicious_files'] ?? 0 ),
-				'helper' => __( 'Potential malware, risky patterns, or unexpected file changes.', 'website-security-radar' ),
+				'helper' => __( 'Files flagged by pattern analysis and context rules.', 'website-security-radar' ),
 				'icon'   => 'dashicons-warning',
 				'tone'   => ! empty( $summary['suspicious_files'] ) ? 'warning' : 'safe',
 			),
 			array(
 				'label'  => __( 'Critical issues', 'website-security-radar' ),
 				'value'  => (int) ( $summary['critical_issues'] ?? 0 ),
-				'helper' => __( 'Immediate review recommended before the next deployment or login cycle.', 'website-security-radar' ),
+				'helper' => __( 'Findings that should be reviewed first.', 'website-security-radar' ),
 				'icon'   => 'dashicons-shield-alt',
 				'tone'   => ! empty( $summary['critical_issues'] ) ? 'critical' : 'safe',
 			),
 			array(
 				'label'  => __( 'Hardening warnings', 'website-security-radar' ),
 				'value'  => (int) ( $summary['hardening_warnings'] ?? 0 ),
-				'helper' => __( 'Configuration gaps that weaken the overall site posture.', 'website-security-radar' ),
+				'helper' => __( 'Configuration gaps that may weaken the site posture.', 'website-security-radar' ),
 				'icon'   => 'dashicons-lock',
 				'tone'   => ! empty( $summary['hardening_warnings'] ) ? 'warning' : 'safe',
 			),
 			array(
 				'label'  => __( 'Cron findings', 'website-security-radar' ),
 				'value'  => (int) ( $summary['cron_findings'] ?? 0 ),
-				'helper' => __( 'Suspicious scheduled tasks that deserve review.', 'website-security-radar' ),
+				'helper' => __( 'Scheduled tasks that may deserve manual review.', 'website-security-radar' ),
 				'icon'   => 'dashicons-clock',
 				'tone'   => ! empty( $summary['cron_findings'] ) ? 'warning' : 'safe',
 			),
@@ -1216,8 +1242,7 @@ class WSR_Admin_Page {
 
 	private function get_dashboard_scan_summary( array $results, array $active_baseline, array $settings ): array {
 		$summary = $results['summary'] ?? array();
-
-		return array(
+		$items   = array(
 			array(
 				'label' => __( 'Latest scan', 'website-security-radar' ),
 				'value' => WSR_Helpers::format_datetime( $results['scanned_at'] ?? '' ),
@@ -1234,6 +1259,20 @@ class WSR_Admin_Page {
 				'label' => __( 'Scheduled scans', 'website-security-radar' ),
 				'value' => ! empty( $settings['enable_scheduled_scan'] ) ? __( 'Enabled', 'website-security-radar' ) : __( 'Disabled', 'website-security-radar' ),
 			),
+		);
+
+		$scan_duration = $this->get_scan_duration_summary_value( $results );
+
+		if ( '' !== $scan_duration ) {
+			$items[] = array(
+				'label' => __( 'Last scan duration', 'website-security-radar' ),
+				'value' => $scan_duration,
+			);
+		}
+
+		return array_merge(
+			$items,
+			array(
 			array(
 				'label' => __( 'Deduction points', 'website-security-radar' ),
 				'value' => sprintf( __( '%d points', 'website-security-radar' ), (int) ( $results['score_breakdown']['total_deduction'] ?? 0 ) ),
@@ -1250,6 +1289,7 @@ class WSR_Admin_Page {
 				'label' => __( 'User security', 'website-security-radar' ),
 				'value' => sprintf( __( '%d items', 'website-security-radar' ), (int) ( $summary['user_security_findings'] ?? 0 ) ),
 			),
+			)
 		);
 	}
 
@@ -1292,13 +1332,26 @@ class WSR_Admin_Page {
 			);
 		}
 
+		if ( 'disabled' === $status ) {
+			return array(
+				array(
+					'label' => __( 'Status', 'website-security-radar' ),
+					'value' => __( 'Disabled', 'website-security-radar' ),
+				),
+				array(
+					'label' => __( 'Provider', 'website-security-radar' ),
+					'value' => (string) ( $summary['provider_label'] ?? __( 'Not configured', 'website-security-radar' ) ),
+				),
+			);
+		}
+
 		return array(
 			array(
 				'label' => __( 'Status', 'website-security-radar' ),
-				'value' => 'error' === $status ? __( 'Error', 'website-security-radar' ) : __( 'Last checked', 'website-security-radar' ),
+				'value' => 'error' === $status ? __( 'Error', 'website-security-radar' ) : __( 'Completed', 'website-security-radar' ),
 			),
 			array(
-				'label' => __( 'Checked at', 'website-security-radar' ),
+				'label' => __( 'Last checked', 'website-security-radar' ),
 				'value' => WSR_Helpers::format_datetime( (string) ( $summary['last_checked'] ?? '' ) ),
 			),
 			array(
@@ -1331,7 +1384,7 @@ class WSR_Admin_Page {
 			$recommendations[] = array(
 				'icon'        => '>',
 				'tone'        => 'warning',
-				'title'       => __( 'Prioritize the top finding', 'website-security-radar' ),
+				'title'       => __( 'Prioritize critical issues first', 'website-security-radar' ),
 				'description' => sprintf(
 					/* translators: %s: issue label. */
 					__( 'Start with: %s.', 'website-security-radar' ),
@@ -1423,13 +1476,44 @@ class WSR_Admin_Page {
 						</div>
 					</div>
 					<div class="wsr-top-issue-actions">
-						<button type="button" class="button button-secondary button-small wsr-issue-toggle" data-wsr-toggle-target="<?php echo esc_attr( $detail_id ); ?>" aria-expanded="false"><?php esc_html_e( 'Details', 'website-security-radar' ); ?></button>
-						<a class="button button-small" href="<?php echo esc_url( WSR_Helpers::admin_url( 'website-security-radar-results', array( 'issue' => $issue['id'] ) ) ); ?>"><?php esc_html_e( 'View', 'website-security-radar' ); ?></a>
+						<a class="button button-primary button-small" href="<?php echo esc_url( WSR_Helpers::admin_url( 'website-security-radar-results', array( 'issue' => $issue['id'] ) ) ); ?>"><?php esc_html_e( 'View details', 'website-security-radar' ); ?></a>
 					</div>
 				</div>
 			<?php endforeach; ?>
 		</div>
 		<?php
+	}
+
+	private function get_scan_duration_summary_value( array $results ): string {
+		$duration = $results['scan_duration'] ?? $results['duration'] ?? $results['summary']['scan_duration'] ?? null;
+
+		if ( null === $duration || '' === $duration ) {
+			return '';
+		}
+
+		if ( is_numeric( $duration ) ) {
+			$seconds = (int) round( (float) $duration );
+
+			if ( $seconds < 60 ) {
+				return sprintf( __( '%d seconds', 'website-security-radar' ), $seconds );
+			}
+
+			$minutes = floor( $seconds / 60 );
+			$remainder = $seconds % 60;
+
+			if ( 0 === $remainder ) {
+				return sprintf( __( '%d minutes', 'website-security-radar' ), (int) $minutes );
+			}
+
+			return sprintf(
+				/* translators: 1: minutes, 2: seconds. */
+				__( '%1$d min %2$d sec', 'website-security-radar' ),
+				(int) $minutes,
+				(int) $remainder
+			);
+		}
+
+		return sanitize_text_field( (string) $duration );
 	}
 
 	private function render_change_details_panel( array $selected_change_detail ): void {

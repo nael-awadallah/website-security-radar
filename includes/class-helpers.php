@@ -13,6 +13,7 @@ class WSR_Helpers {
 	const SETTINGS_OPTION       = 'website_security_radar_settings';
 	const BASELINE_OPTION       = 'website_security_radar_baseline';
 	const RESULTS_OPTION        = 'website_security_radar_scan_results';
+	const PREVIOUS_RESULTS_OPTION = 'website_security_radar_previous_scan_results';
 	const IGNORE_OPTION         = 'website_security_radar_ignored_paths';
 	const REVIEWED_OPTION       = 'website_security_radar_reviewed_results';
 	const TIMELINE_OPTION       = 'website_security_radar_timeline';

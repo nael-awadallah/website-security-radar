@@ -81,6 +81,26 @@ class WSR_Plugin {
 			return WSR_Helpers::get_default_results();
 		}
 
+		$settings                       = WSR_Helpers::get_settings();
+		$results['vulnerability_checks'] = $this->vulnerability_service->get_status_summary( $results, $settings );
+		$results['summary']              = $this->build_summary(
+			(int) ( $results['inventory_count'] ?? 0 ),
+			is_array( $results['baseline'] ?? null ) ? $results['baseline'] : array(),
+			is_array( $results['issues'] ?? null ) ? $results['issues'] : array(),
+			(int) ( $results['summary']['ignored_findings'] ?? 0 ),
+			is_array( $results['severity_counts'] ?? null ) ? $results['severity_counts'] : array()
+		);
+
+		return $this->normalize_results( $results );
+	}
+
+	public function get_previous_results(): array {
+		$results = get_option( WSR_Helpers::PREVIOUS_RESULTS_OPTION, array() );
+
+		if ( ! is_array( $results ) || empty( $results ) ) {
+			return array();
+		}
+
 		return $this->normalize_results( $results );
 	}
 
@@ -133,6 +153,7 @@ class WSR_Plugin {
 		);
 
 		if ( $persist ) {
+			update_option( WSR_Helpers::PREVIOUS_RESULTS_OPTION, $this->get_latest_results(), false );
 			update_option( WSR_Helpers::RESULTS_OPTION, $results, false );
 			$this->notifier->maybe_send_critical_alert( $results, $settings );
 		}
@@ -180,6 +201,7 @@ class WSR_Plugin {
 		);
 
 		if ( $persist ) {
+			update_option( WSR_Helpers::PREVIOUS_RESULTS_OPTION, $this->get_latest_results(), false );
 			update_option( WSR_Helpers::RESULTS_OPTION, $results, false );
 			$this->notifier->maybe_send_critical_alert( $results, $settings );
 		}
@@ -490,20 +512,44 @@ class WSR_Plugin {
 	}
 
 	private function build_results( array $results, int $inventory_count, array $baseline, array $issues, int $ignored_findings ): array {
-		$summary = array(
+		$results['summary'] = $this->build_summary( $inventory_count, $baseline, $issues, $ignored_findings, $results['severity_counts'] ?? array() );
+
+		return $this->normalize_results( $results );
+	}
+
+	private function normalize_results( array $results ): array {
+		return array_replace_recursive( WSR_Helpers::get_default_results(), $results );
+	}
+
+	private function count_suspicious_files( array $issues ): int {
+		$paths = array();
+
+		foreach ( $issues as $issue ) {
+			$type = strtolower( (string) ( $issue['type'] ?? '' ) );
+
+			if ( ! in_array( $type, array( 'malware', 'suspicious pattern', 'potential risk' ), true ) ) {
+				continue;
+			}
+
+			$path = WSR_Helpers::normalize_relative_path( (string) ( $issue['path'] ?? $issue['file'] ?? '' ) );
+
+			if ( '' === $path ) {
+				continue;
+			}
+
+			$paths[ $path ] = true;
+		}
+
+		return count( $paths );
+	}
+
+	private function build_summary( int $inventory_count, array $baseline, array $issues, int $ignored_findings, array $severity_counts ): array {
+		return array(
 			'total_scanned_files'    => $inventory_count,
 			'new_files'              => count( $baseline['new_files'] ?? array() ),
 			'modified_files'         => count( $baseline['modified'] ?? array() ),
 			'deleted_files'          => count( $baseline['deleted'] ?? array() ),
-			'suspicious_files'       => count(
-				array_filter(
-					$issues,
-					static function ( array $issue ): bool {
-						$type = strtolower( (string) ( $issue['type'] ?? '' ) );
-						return in_array( $type, array( 'malware', 'suspicious pattern', 'potential risk', 'file change' ), true );
-					}
-				)
-			),
+			'suspicious_files'       => $this->count_suspicious_files( $issues ),
 			'hardening_warnings'     => count(
 				array_filter(
 					$issues,
@@ -512,7 +558,7 @@ class WSR_Plugin {
 					}
 				)
 			),
-			'critical_issues'        => (int) ( $results['severity_counts']['critical'] ?? 0 ),
+			'critical_issues'        => (int) ( $severity_counts['critical'] ?? 0 ),
 			'ignored_findings'       => $ignored_findings,
 			'cron_findings'          => count(
 				array_filter(
@@ -539,14 +585,6 @@ class WSR_Plugin {
 				)
 			),
 		);
-
-		$results['summary'] = $summary;
-
-		return $this->normalize_results( $results );
-	}
-
-	private function normalize_results( array $results ): array {
-		return array_replace_recursive( WSR_Helpers::get_default_results(), $results );
 	}
 
 	private function get_latest_vulnerability_data( array $settings ): array {
