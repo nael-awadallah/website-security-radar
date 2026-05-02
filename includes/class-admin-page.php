@@ -259,6 +259,9 @@ class WSR_Admin_Page {
 						<p><strong><?php esc_html_e( 'Issue:', 'website-security-radar' ); ?></strong> <?php echo esc_html( $detail_issue['issue'] ); ?></p>
 						<p><strong><?php esc_html_e( 'Path:', 'website-security-radar' ); ?></strong> <?php echo esc_html( (string) ( $detail_issue['path'] ?? $detail_issue['file'] ?? '' ) ); ?></p>
 						<p><strong><?php esc_html_e( 'Explanation:', 'website-security-radar' ); ?></strong> <?php echo esc_html( $detail_issue['explanation'] ); ?></p>
+						<?php if ( ! empty( $detail_issue['recommended_action'] ) ) : ?>
+							<p><strong><?php esc_html_e( 'Recommended action:', 'website-security-radar' ); ?></strong> <?php echo esc_html( (string) $detail_issue['recommended_action'] ); ?></p>
+						<?php endif; ?>
 						<?php if ( isset( $detail_issue['score'] ) ) : ?>
 							<p><strong><?php esc_html_e( 'Score:', 'website-security-radar' ); ?></strong> <?php echo esc_html( (string) $detail_issue['score'] ); ?></p>
 						<?php endif; ?>

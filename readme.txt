@@ -28,6 +28,7 @@ Unlike many security plugins, this tool focuses on **visibility and control**, n
 **Malware Pattern Detection**
 * Identify suspicious PHP, JS, and HTML patterns
 * Detect obfuscated code, injected scripts, and common spam indicators
+* Detect hidden backdoor heuristics such as uploads PHP, disguised image shells, and suspicious backdoor filenames
 * Highlight risky files with severity levels
 
 **Security Hardening Checks**
@@ -113,3 +114,4 @@ No. The plugin does not modify files or configurations automatically.
 
 = 1.0.0 =
 * Initial release with file scanning, baseline comparison, malware detection, hardening checks, scheduled scans, alerts, and dashboard UI.
+* Added hidden backdoor heuristics for suspicious filenames, uploads PHP, disguised image shells, recent root PHP changes, and small obfuscated droppers.
