@@ -16,11 +16,14 @@ class WSR_Helpers {
 	const IGNORE_OPTION         = 'website_security_radar_ignored_paths';
 	const REVIEWED_OPTION       = 'website_security_radar_reviewed_results';
 	const TIMELINE_OPTION       = 'website_security_radar_timeline';
+	const USER_ACTIVITY_OPTION  = 'website_security_radar_user_activity';
 	const CRON_HOOK             = 'website_security_radar_daily_scan';
 	const AJAX_SCAN_ACTION      = 'website_security_radar_run_scan';
 	const AJAX_BASELINE_ACTION  = 'website_security_radar_create_baseline';
+	const AJAX_VULNERABILITY_ACTION = 'website_security_radar_run_vulnerability_check';
 	const ADMIN_NONCE_ACTION    = 'website_security_radar_admin_action';
 	const AJAX_NONCE_ACTION     = 'website_security_radar_ajax_action';
+	const REPORT_NONCE_ACTION   = 'website_security_radar_view_report';
 	const TIMELINE_DEFAULT_LIMIT = 500;
 
 	public static function get_ignore_rule_types(): array {
@@ -43,6 +46,13 @@ class WSR_Helpers {
 			'scan_plugins'          => 1,
 			'scan_root_files'       => 1,
 			'timeline_event_limit'  => self::TIMELINE_DEFAULT_LIMIT,
+			'enable_vulnerability_checks' => 0,
+			'vulnerability_provider'      => 'mock',
+			'vulnerability_api_key'       => '',
+			'vulnerability_min_severity'  => 'low',
+			'report_agency_name'          => '',
+			'report_agency_logo_url'      => '',
+			'report_footer_text'          => '',
 		);
 	}
 
@@ -122,6 +132,9 @@ class WSR_Helpers {
 			'updates'            => __( 'Updates', 'website-security-radar' ),
 			'permissions'        => __( 'Permissions', 'website-security-radar' ),
 			'exposure'           => __( 'Exposure', 'website-security-radar' ),
+			'vulnerability'      => __( 'Vulnerability', 'website-security-radar' ),
+			'cron'               => __( 'Cron', 'website-security-radar' ),
+			'user security'      => __( 'User Security', 'website-security-radar' ),
 		);
 
 		$normalized = strtolower( trim( $type ) );
@@ -146,7 +159,54 @@ class WSR_Helpers {
 			'issue_marked_reviewed'     => __( 'Issue Marked Reviewed', 'website-security-radar' ),
 			'path_ignored'              => __( 'Path Ignored', 'website-security-radar' ),
 			'settings_changed'          => __( 'Settings Changed', 'website-security-radar' ),
+			'vulnerability_check_completed' => __( 'Vulnerability Check Completed', 'website-security-radar' ),
+			'admin_user_created'        => __( 'Administrator User Created', 'website-security-radar' ),
+			'admin_role_granted'        => __( 'Administrator Role Granted', 'website-security-radar' ),
+			'admin_profile_updated'     => __( 'Administrator Profile Updated', 'website-security-radar' ),
 		);
+	}
+
+	public static function get_vulnerability_provider_options(): array {
+		return array(
+			'mock'       => __( 'Mock Provider', 'website-security-radar' ),
+			'wpscan'     => __( 'WPScan Placeholder', 'website-security-radar' ),
+			'patchstack' => __( 'Patchstack Placeholder', 'website-security-radar' ),
+		);
+	}
+
+	public static function get_severity_levels(): array {
+		return array( 'low', 'medium', 'high', 'critical' );
+	}
+
+	public static function sanitize_severity( string $severity, string $default = 'low' ): string {
+		$severity = sanitize_key( $severity );
+
+		return in_array( $severity, self::get_severity_levels(), true ) ? $severity : $default;
+	}
+
+	public static function severity_meets_minimum( string $severity, string $minimum ): bool {
+		$order = array(
+			'low'      => 1,
+			'medium'   => 2,
+			'high'     => 3,
+			'critical' => 4,
+		);
+
+		return ( $order[ self::sanitize_severity( $severity ) ] ?? 0 ) >= ( $order[ self::sanitize_severity( $minimum ) ] ?? 0 );
+	}
+
+	public static function mask_api_key( string $api_key ): string {
+		$api_key = trim( $api_key );
+
+		if ( '' === $api_key ) {
+			return '';
+		}
+
+		if ( strlen( $api_key ) <= 8 ) {
+			return str_repeat( '*', strlen( $api_key ) );
+		}
+
+		return substr( $api_key, 0, 4 ) . str_repeat( '*', max( 4, strlen( $api_key ) - 8 ) ) . substr( $api_key, -4 );
 	}
 
 	public static function get_timeline_event_type_label( string $type ): string {
@@ -462,7 +522,7 @@ class WSR_Helpers {
 			'|',
 			array(
 				(string) ( $issue['type'] ?? '' ),
-				(string) ( $issue['path'] ?? '' ),
+				(string) ( $issue['path'] ?? $issue['hook_name'] ?? $issue['component_slug'] ?? $issue['user_login'] ?? '' ),
 				(string) ( $issue['issue'] ?? '' ),
 				(string) ( $issue['line'] ?? '' ),
 			)
@@ -603,6 +663,62 @@ class WSR_Helpers {
 			'file_changes'        => __( 'File Changes', 'website-security-radar' ),
 			'hardening'           => __( 'Hardening', 'website-security-radar' ),
 			'uploads_risk'        => __( 'Uploads Risk', 'website-security-radar' ),
+			'vulnerabilities'     => __( 'Vulnerabilities', 'website-security-radar' ),
+			'cron'                => __( 'Cron Security', 'website-security-radar' ),
+			'user_security'       => __( 'User Security', 'website-security-radar' ),
+		);
+	}
+
+	public static function get_default_results(): array {
+		return array(
+			'scanned_at'       => '',
+			'score'            => 100,
+			'risk_level'       => 'Safe',
+			'summary'          => array(
+				'total_scanned_files'     => 0,
+				'new_files'               => 0,
+				'modified_files'          => 0,
+				'deleted_files'           => 0,
+				'suspicious_files'        => 0,
+				'hardening_warnings'      => 0,
+				'critical_issues'         => 0,
+				'ignored_findings'        => 0,
+				'cron_findings'           => 0,
+				'user_security_findings'  => 0,
+				'vulnerability_findings'  => 0,
+			),
+			'severity_counts'  => array(
+				'critical' => 0,
+				'high'     => 0,
+				'medium'   => 0,
+				'low'      => 0,
+			),
+			'score_breakdown'  => array(
+				'score'                  => 100,
+				'total_deduction'        => 0,
+				'deduction_per_severity' => array(
+					'critical' => 20,
+					'high'     => 10,
+					'medium'   => 5,
+					'low'      => 2,
+				),
+				'categories'             => array(),
+			),
+			'issues'           => array(),
+			'baseline'         => array(
+				'has_baseline' => false,
+			),
+			'inventory_count'       => 0,
+			'vulnerability_checks'  => array(
+				'enabled'                => false,
+				'provider'               => '',
+				'provider_label'         => '',
+				'status'                 => 'disabled',
+				'last_checked'           => '',
+				'vulnerabilities_found'  => 0,
+				'critical_found'         => 0,
+				'error_message'          => '',
+			),
 		);
 	}
 
@@ -612,6 +728,18 @@ class WSR_Helpers {
 
 		if ( '' !== $path && self::is_uploads_path( $path ) ) {
 			return 'uploads_risk';
+		}
+
+		if ( 'vulnerability' === $type ) {
+			return 'vulnerabilities';
+		}
+
+		if ( 'cron' === $type ) {
+			return 'cron';
+		}
+
+		if ( 'user security' === $type ) {
+			return 'user_security';
 		}
 
 		if ( in_array( $type, array( 'hardening', 'updates', 'permissions', 'exposure' ), true ) ) {

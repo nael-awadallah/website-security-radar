@@ -35,6 +35,6 @@ class WSR_Cron {
 	}
 
 	public function run_scheduled_scan(): void {
-		WSR_Plugin::get_instance()->run_scan( false );
+		WSR_Plugin::get_instance()->run_scan( true, 'scheduled', true );
 	}
 }

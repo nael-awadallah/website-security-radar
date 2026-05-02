@@ -50,6 +50,7 @@ class WSR_Admin_Page {
 		add_submenu_page( $slug, __( 'Timeline', 'website-security-radar' ), __( 'Timeline', 'website-security-radar' ), $capability, 'website-security-radar-timeline', array( $this, 'render_timeline_page' ) );
 		add_submenu_page( $slug, __( 'Settings', 'website-security-radar' ), __( 'Settings', 'website-security-radar' ), $capability, 'website-security-radar-settings', array( $this, 'render_settings_page' ) );
 		add_submenu_page( $slug, __( 'Ignore List', 'website-security-radar' ), __( 'Ignore List', 'website-security-radar' ), $capability, 'website-security-radar-ignore-list', array( $this, 'render_ignore_list_page' ) );
+		add_submenu_page( null, __( 'Client Report', 'website-security-radar' ), __( 'Client Report', 'website-security-radar' ), $capability, 'website-security-radar-report', array( $this, 'render_report_page' ) );
 		add_submenu_page( $slug, __( 'About', 'website-security-radar' ), __( 'About / Branding', 'website-security-radar' ), $capability, 'website-security-radar-about', array( $this, 'render_about_page' ) );
 	}
 
@@ -68,10 +69,12 @@ class WSR_Admin_Page {
 				'ajaxUrl'        => admin_url( 'admin-ajax.php' ),
 				'scanAction'     => WSR_Helpers::AJAX_SCAN_ACTION,
 				'baselineAction' => WSR_Helpers::AJAX_BASELINE_ACTION,
+				'vulnerabilityAction' => WSR_Helpers::AJAX_VULNERABILITY_ACTION,
 				'nonce'          => wp_create_nonce( WSR_Helpers::AJAX_NONCE_ACTION ),
 				'strings'        => array(
 					'scanning'   => __( 'Running scan...', 'website-security-radar' ),
 					'baselining' => __( 'Creating baseline...', 'website-security-radar' ),
+					'vulnerabilityChecking' => __( 'Running vulnerability check...', 'website-security-radar' ),
 					'showDetails'=> __( 'Details', 'website-security-radar' ),
 					'hideDetails'=> __( 'Hide details', 'website-security-radar' ),
 					'success'    => __( 'Action completed.', 'website-security-radar' ),
@@ -205,6 +208,14 @@ class WSR_Admin_Page {
 								<button type="button" class="button button-secondary wsr-ajax-button" data-wsr-action="baseline"><?php esc_html_e( 'Create Baseline', 'website-security-radar' ); ?></button>
 								<p><?php esc_html_e( 'Capture the current trusted state for future change comparisons.', 'website-security-radar' ); ?></p>
 							</div>
+							<div class="wsr-action-item">
+								<button type="button" class="button button-secondary wsr-ajax-button" data-wsr-action="vulnerability"><?php esc_html_e( 'Run Vulnerability Check', 'website-security-radar' ); ?></button>
+								<p><?php esc_html_e( 'Run the optional component version lookup using the selected provider.', 'website-security-radar' ); ?></p>
+							</div>
+							<div class="wsr-action-item">
+								<a class="button button-secondary" href="<?php echo esc_url( $this->plugin->get_report()->get_report_url() ); ?>"><?php esc_html_e( 'Export Client Report', 'website-security-radar' ); ?></a>
+								<p><?php esc_html_e( 'Open a print-friendly report that can be saved as PDF from the browser.', 'website-security-radar' ); ?></p>
+							</div>
 						</div>
 						<div class="wsr-card-meta">
 							<span><?php echo esc_html( sprintf( __( '%d files scanned', 'website-security-radar' ), (int) ( $summary['total_scanned_files'] ?? 0 ) ) ); ?></span>
@@ -216,6 +227,18 @@ class WSR_Admin_Page {
 						<h2><?php esc_html_e( 'Scan summary', 'website-security-radar' ); ?></h2>
 						<div class="wsr-summary-list">
 							<?php foreach ( $scan_summary as $item ) : ?>
+								<div class="wsr-summary-item">
+									<span class="wsr-summary-label"><?php echo esc_html( $item['label'] ); ?></span>
+									<strong class="wsr-summary-value"><?php echo esc_html( $item['value'] ); ?></strong>
+								</div>
+							<?php endforeach; ?>
+						</div>
+					</div>
+					<div class="wsr-card">
+						<div class="wsr-section-eyebrow"><?php esc_html_e( 'Component posture', 'website-security-radar' ); ?></div>
+						<h2><?php esc_html_e( 'Vulnerability Checks', 'website-security-radar' ); ?></h2>
+						<div class="wsr-summary-list">
+							<?php foreach ( $this->get_vulnerability_summary_items( $results, $settings ) as $item ) : ?>
 								<div class="wsr-summary-item">
 									<span class="wsr-summary-label"><?php echo esc_html( $item['label'] ); ?></span>
 									<strong class="wsr-summary-value"><?php echo esc_html( $item['value'] ); ?></strong>
@@ -257,7 +280,7 @@ class WSR_Admin_Page {
 							<p><strong><?php esc_html_e( 'Confidence:', 'website-security-radar' ); ?></strong> <?php echo esc_html( ucfirst( (string) $detail_issue['confidence'] ) ); ?></p>
 						<?php endif; ?>
 						<p><strong><?php esc_html_e( 'Issue:', 'website-security-radar' ); ?></strong> <?php echo esc_html( $detail_issue['issue'] ); ?></p>
-						<p><strong><?php esc_html_e( 'Path:', 'website-security-radar' ); ?></strong> <?php echo esc_html( WSR_Helpers::get_safe_display_path( (string) ( $detail_issue['path'] ?? $detail_issue['file'] ?? '' ) ) ); ?></p>
+						<p><strong><?php esc_html_e( 'Target:', 'website-security-radar' ); ?></strong> <?php echo esc_html( $this->get_issue_subject_label( $detail_issue ) ); ?></p>
 						<p><strong><?php esc_html_e( 'Explanation:', 'website-security-radar' ); ?></strong> <?php echo esc_html( $detail_issue['explanation'] ); ?></p>
 						<?php if ( ! empty( $detail_issue['recommended_action'] ) ) : ?>
 							<p><strong><?php esc_html_e( 'Recommended action:', 'website-security-radar' ); ?></strong> <?php echo esc_html( (string) $detail_issue['recommended_action'] ); ?></p>
@@ -273,6 +296,15 @@ class WSR_Admin_Page {
 						<?php endif; ?>
 						<?php if ( ! empty( $detail_issue['line'] ) ) : ?>
 							<p><strong><?php esc_html_e( 'Line:', 'website-security-radar' ); ?></strong> <?php echo esc_html( (string) $detail_issue['line'] ); ?></p>
+						<?php endif; ?>
+						<?php if ( ! empty( $detail_issue['installed_version'] ) ) : ?>
+							<p><strong><?php esc_html_e( 'Installed version:', 'website-security-radar' ); ?></strong> <?php echo esc_html( (string) $detail_issue['installed_version'] ); ?></p>
+						<?php endif; ?>
+						<?php if ( ! empty( $detail_issue['fixed_version'] ) ) : ?>
+							<p><strong><?php esc_html_e( 'Fixed version:', 'website-security-radar' ); ?></strong> <?php echo esc_html( (string) $detail_issue['fixed_version'] ); ?></p>
+						<?php endif; ?>
+						<?php if ( ! empty( $detail_issue['vulnerability_url'] ) ) : ?>
+							<p><strong><?php esc_html_e( 'Reference:', 'website-security-radar' ); ?></strong> <a href="<?php echo esc_url( (string) $detail_issue['vulnerability_url'] ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( (string) $detail_issue['vulnerability_url'] ); ?></a></p>
 						<?php endif; ?>
 					</div>
 				<?php endif; ?>
@@ -342,6 +374,55 @@ class WSR_Admin_Page {
 						<p class="wsr-card-intro"><?php esc_html_e( 'Control automatic background monitoring.', 'website-security-radar' ); ?></p>
 						<div class="wsr-setting-list">
 							<?php $this->render_toggle_setting( 'enable_scheduled_scan', __( 'Enable scheduled scan', 'website-security-radar' ), __( 'Run the scanner daily using WordPress cron.', 'website-security-radar' ), $settings ); ?>
+						</div>
+					</div>
+					<div class="wsr-card">
+						<h2><?php esc_html_e( 'Vulnerability Checks', 'website-security-radar' ); ?></h2>
+						<p class="wsr-card-intro"><?php esc_html_e( 'Optional remote checks against installed WordPress core, plugin, and theme versions.', 'website-security-radar' ); ?></p>
+						<div class="wsr-setting-list">
+							<?php $this->render_toggle_setting( 'enable_vulnerability_checks', __( 'Enable vulnerability checks', 'website-security-radar' ), __( 'Disabled by default. When enabled, only installed component slugs and versions are sent to the selected provider.', 'website-security-radar' ), $settings ); ?>
+							<div class="wsr-setting-row wsr-setting-field">
+								<label class="wsr-setting-heading" for="wsr-vulnerability-provider"><?php esc_html_e( 'Provider', 'website-security-radar' ); ?></label>
+								<select id="wsr-vulnerability-provider" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[vulnerability_provider]">
+									<?php foreach ( WSR_Helpers::get_vulnerability_provider_options() as $provider_key => $provider_label ) : ?>
+										<option value="<?php echo esc_attr( $provider_key ); ?>" <?php selected( (string) ( $settings['vulnerability_provider'] ?? 'mock' ), $provider_key ); ?>><?php echo esc_html( $provider_label ); ?></option>
+									<?php endforeach; ?>
+								</select>
+							</div>
+							<div class="wsr-setting-row wsr-setting-field">
+								<label class="wsr-setting-heading" for="wsr-vulnerability-api-key"><?php esc_html_e( 'API key', 'website-security-radar' ); ?></label>
+								<input id="wsr-vulnerability-api-key" type="text" class="regular-text" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[vulnerability_api_key]" value="<?php echo esc_attr( WSR_Helpers::mask_api_key( (string) ( $settings['vulnerability_api_key'] ?? '' ) ) ); ?>" autocomplete="off" />
+								<p class="description"><?php esc_html_e( 'Saved keys are masked after submission.', 'website-security-radar' ); ?></p>
+							</div>
+							<div class="wsr-setting-row wsr-setting-field">
+								<label class="wsr-setting-heading" for="wsr-vulnerability-severity"><?php esc_html_e( 'Minimum severity to show', 'website-security-radar' ); ?></label>
+								<select id="wsr-vulnerability-severity" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[vulnerability_min_severity]">
+									<?php foreach ( WSR_Helpers::get_severity_levels() as $severity ) : ?>
+										<option value="<?php echo esc_attr( $severity ); ?>" <?php selected( (string) ( $settings['vulnerability_min_severity'] ?? 'low' ), $severity ); ?>><?php echo esc_html( ucfirst( $severity ) ); ?></option>
+									<?php endforeach; ?>
+								</select>
+							</div>
+							<div class="wsr-setting-row wsr-setting-field">
+								<p class="description"><?php esc_html_e( 'Privacy notice: when vulnerability checks are enabled, the plugin only sends your WordPress core version plus installed plugin and theme slugs and versions. It never sends file contents, user data, database data, or absolute server paths.', 'website-security-radar' ); ?></p>
+							</div>
+						</div>
+					</div>
+					<div class="wsr-card">
+						<h2><?php esc_html_e( 'Client Report Branding', 'website-security-radar' ); ?></h2>
+						<p class="wsr-card-intro"><?php esc_html_e( 'Optional white-label details for the client-facing report export.', 'website-security-radar' ); ?></p>
+						<div class="wsr-setting-list">
+							<div class="wsr-setting-row wsr-setting-field">
+								<label class="wsr-setting-heading" for="wsr-report-agency-name"><?php esc_html_e( 'Agency name', 'website-security-radar' ); ?></label>
+								<input id="wsr-report-agency-name" type="text" class="regular-text" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[report_agency_name]" value="<?php echo esc_attr( (string) ( $settings['report_agency_name'] ?? '' ) ); ?>" />
+							</div>
+							<div class="wsr-setting-row wsr-setting-field">
+								<label class="wsr-setting-heading" for="wsr-report-agency-logo"><?php esc_html_e( 'Agency logo URL', 'website-security-radar' ); ?></label>
+								<input id="wsr-report-agency-logo" type="url" class="regular-text" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[report_agency_logo_url]" value="<?php echo esc_attr( (string) ( $settings['report_agency_logo_url'] ?? '' ) ); ?>" />
+							</div>
+							<div class="wsr-setting-row wsr-setting-field">
+								<label class="wsr-setting-heading" for="wsr-report-footer"><?php esc_html_e( 'Report footer text', 'website-security-radar' ); ?></label>
+								<textarea id="wsr-report-footer" class="large-text" rows="3" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[report_footer_text]"><?php echo esc_textarea( (string) ( $settings['report_footer_text'] ?? '' ) ); ?></textarea>
+							</div>
 						</div>
 					</div>
 				</div>
@@ -583,6 +664,12 @@ class WSR_Admin_Page {
 		<?php
 	}
 
+	public function render_report_page(): void {
+		$this->assert_capability();
+		$this->plugin->get_report()->validate_request();
+		$this->plugin->get_report()->render_page();
+	}
+
 	public function handle_mark_reviewed(): void {
 		$this->assert_capability();
 		check_admin_referer( WSR_Helpers::ADMIN_NONCE_ACTION );
@@ -809,7 +896,7 @@ class WSR_Admin_Page {
 					<tr>
 						<th><?php esc_html_e( 'Type', 'website-security-radar' ); ?></th>
 						<th><?php esc_html_e( 'Severity', 'website-security-radar' ); ?></th>
-						<th><?php esc_html_e( 'File / Path', 'website-security-radar' ); ?></th>
+						<th><?php esc_html_e( 'Target', 'website-security-radar' ); ?></th>
 						<th><?php esc_html_e( 'Issue', 'website-security-radar' ); ?></th>
 						<th><?php esc_html_e( 'Explanation', 'website-security-radar' ); ?></th>
 						<th><?php esc_html_e( 'Detected date', 'website-security-radar' ); ?></th>
@@ -822,8 +909,8 @@ class WSR_Admin_Page {
 							<td><span class="wsr-type-pill"><?php echo esc_html( WSR_Helpers::get_type_label( (string) ( $issue['type'] ?? '' ) ) ); ?></span></td>
 							<td><span class="<?php echo esc_attr( WSR_Helpers::severity_label_class( (string) $issue['severity'] ) ); ?>"><?php echo esc_html( ucfirst( (string) $issue['severity'] ) ); ?></span><?php if ( ! empty( $issue['confidence'] ) ) : ?><span class="wsr-confidence"><?php echo esc_html( ucfirst( (string) $issue['confidence'] ) ); ?></span><?php endif; ?></td>
 							<td>
-								<?php $display_path = WSR_Helpers::get_safe_display_path( (string) ( $issue['path'] ?? $issue['file'] ?? '' ) ); ?>
-								<code class="wsr-path" title="<?php echo esc_attr( $display_path ); ?>"><?php echo esc_html( $display_path ); ?></code>
+								<?php $display_target = $this->get_issue_subject_label( $issue ); ?>
+								<code class="wsr-path" title="<?php echo esc_attr( $display_target ); ?>"><?php echo esc_html( $display_target ); ?></code>
 							</td>
 							<td><?php echo esc_html( (string) $issue['issue'] ); ?></td>
 							<td><?php echo esc_html( (string) $issue['explanation'] ); ?></td>
@@ -837,7 +924,9 @@ class WSR_Admin_Page {
 									<?php if ( empty( $issue['reviewed'] ) ) : ?>
 										<a class="button button-small" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=wsr_mark_reviewed&issue=' . rawurlencode( (string) $issue['id'] ) ), WSR_Helpers::ADMIN_NONCE_ACTION ) ); ?>"><?php esc_html_e( 'Mark as reviewed', 'website-security-radar' ); ?></a>
 									<?php endif; ?>
-									<a class="button button-small" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=wsr_ignore_path&path=' . rawurlencode( (string) $issue['path'] ) ), WSR_Helpers::ADMIN_NONCE_ACTION ) ); ?>"><?php esc_html_e( 'Ignore path', 'website-security-radar' ); ?></a>
+									<?php if ( ! empty( $issue['path'] ) ) : ?>
+										<a class="button button-small" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=wsr_ignore_path&path=' . rawurlencode( (string) $issue['path'] ) ), WSR_Helpers::ADMIN_NONCE_ACTION ) ); ?>"><?php esc_html_e( 'Ignore path', 'website-security-radar' ); ?></a>
+									<?php endif; ?>
 								</div>
 							</td>
 						</tr>
@@ -1102,6 +1191,20 @@ class WSR_Admin_Page {
 				'icon'   => 'dashicons-lock',
 				'tone'   => ! empty( $summary['hardening_warnings'] ) ? 'warning' : 'safe',
 			),
+			array(
+				'label'  => __( 'Cron findings', 'website-security-radar' ),
+				'value'  => (int) ( $summary['cron_findings'] ?? 0 ),
+				'helper' => __( 'Suspicious scheduled tasks that deserve review.', 'website-security-radar' ),
+				'icon'   => 'dashicons-clock',
+				'tone'   => ! empty( $summary['cron_findings'] ) ? 'warning' : 'safe',
+			),
+			array(
+				'label'  => __( 'User security', 'website-security-radar' ),
+				'value'  => (int) ( $summary['user_security_findings'] ?? 0 ),
+				'helper' => __( 'Administrator account changes and risky user signals.', 'website-security-radar' ),
+				'icon'   => 'dashicons-admin-users',
+				'tone'   => ! empty( $summary['user_security_findings'] ) ? 'warning' : 'safe',
+			),
 		);
 	}
 
@@ -1132,6 +1235,73 @@ class WSR_Admin_Page {
 			array(
 				'label' => __( 'Ignored findings', 'website-security-radar' ),
 				'value' => sprintf( __( '%d items', 'website-security-radar' ), (int) ( $summary['ignored_findings'] ?? 0 ) ),
+			),
+			array(
+				'label' => __( 'Cron findings', 'website-security-radar' ),
+				'value' => sprintf( __( '%d items', 'website-security-radar' ), (int) ( $summary['cron_findings'] ?? 0 ) ),
+			),
+			array(
+				'label' => __( 'User security', 'website-security-radar' ),
+				'value' => sprintf( __( '%d items', 'website-security-radar' ), (int) ( $summary['user_security_findings'] ?? 0 ) ),
+			),
+		);
+	}
+
+	private function get_vulnerability_summary_items( array $results, array $settings ): array {
+		$summary = is_array( $results['vulnerability_checks'] ?? null ) ? $results['vulnerability_checks'] : array();
+		$status  = sanitize_key( (string) ( $summary['status'] ?? '' ) );
+
+		if ( empty( $settings['enable_vulnerability_checks'] ) ) {
+			return array(
+				array(
+					'label' => __( 'Status', 'website-security-radar' ),
+					'value' => __( 'Disabled', 'website-security-radar' ),
+				),
+			);
+		}
+
+		if ( 'not_configured' === $status ) {
+			return array(
+				array(
+					'label' => __( 'Status', 'website-security-radar' ),
+					'value' => __( 'Not configured', 'website-security-radar' ),
+				),
+				array(
+					'label' => __( 'Provider', 'website-security-radar' ),
+					'value' => (string) ( $summary['provider_label'] ?? __( 'Not configured', 'website-security-radar' ) ),
+				),
+			);
+		}
+
+		if ( 'ready' === $status ) {
+			return array(
+				array(
+					'label' => __( 'Status', 'website-security-radar' ),
+					'value' => __( 'Ready', 'website-security-radar' ),
+				),
+				array(
+					'label' => __( 'Provider', 'website-security-radar' ),
+					'value' => (string) ( $summary['provider_label'] ?? __( 'Not configured', 'website-security-radar' ) ),
+				),
+			);
+		}
+
+		return array(
+			array(
+				'label' => __( 'Status', 'website-security-radar' ),
+				'value' => 'error' === $status ? __( 'Error', 'website-security-radar' ) : __( 'Last checked', 'website-security-radar' ),
+			),
+			array(
+				'label' => __( 'Checked at', 'website-security-radar' ),
+				'value' => WSR_Helpers::format_datetime( (string) ( $summary['last_checked'] ?? '' ) ),
+			),
+			array(
+				'label' => __( 'Vulnerabilities found', 'website-security-radar' ),
+				'value' => (string) (int) ( $summary['vulnerabilities_found'] ?? 0 ),
+			),
+			array(
+				'label' => __( 'Critical vulnerabilities', 'website-security-radar' ),
+				'value' => (string) (int) ( $summary['critical_found'] ?? 0 ),
 			),
 		);
 	}
@@ -1753,13 +1923,26 @@ class WSR_Admin_Page {
 	}
 
 	private function get_issue_type_options( array $issues ): array {
-		return array(
+		$options = array(
 			'malware',
 			'suspicious pattern',
 			'potential risk',
 			'file change',
 			'hardening',
+			'vulnerability',
+			'cron',
+			'user security',
 		);
+
+		foreach ( $issues as $issue ) {
+			$type = strtolower( trim( (string) ( $issue['type'] ?? '' ) ) );
+
+			if ( '' !== $type && ! in_array( $type, $options, true ) ) {
+				$options[] = $type;
+			}
+		}
+
+		return $options;
 	}
 
 	private function get_results_query_args( bool $reset_paged = false ): array {
@@ -1874,6 +2057,18 @@ class WSR_Admin_Page {
 				'label'       => __( 'Hardening', 'website-security-radar' ),
 				'description' => __( 'Configuration and exposure checks that improve overall site security.', 'website-security-radar' ),
 			),
+			'vulnerability'      => array(
+				'label'       => __( 'Vulnerability', 'website-security-radar' ),
+				'description' => __( 'Known component vulnerabilities based on installed version data.', 'website-security-radar' ),
+			),
+			'cron'               => array(
+				'label'       => __( 'Cron', 'website-security-radar' ),
+				'description' => __( 'Scheduled WordPress tasks that may need review.', 'website-security-radar' ),
+			),
+			'user security'      => array(
+				'label'       => __( 'User Security', 'website-security-radar' ),
+				'description' => __( 'Administrator account changes and user access signals.', 'website-security-radar' ),
+			),
 			'uploads issue'      => array(
 				'label'       => __( 'Uploads Issue', 'website-security-radar' ),
 				'description' => __( 'Issues related to files inside uploads or uploads-specific execution risk.', 'website-security-radar' ),
@@ -1945,8 +2140,22 @@ class WSR_Admin_Page {
 	}
 
 	private function issue_matches_path_search( array $issue, string $path_search ): bool {
-		$display_path = strtolower( (string) ( $issue['path'] ?? $issue['file'] ?? '' ) );
-		return false !== strpos( $display_path, strtolower( $path_search ) );
+		$haystack = strtolower(
+			implode(
+				' ',
+				array_filter(
+					array(
+						(string) ( $issue['path'] ?? $issue['file'] ?? '' ),
+						(string) ( $issue['component_name'] ?? '' ),
+						(string) ( $issue['component_slug'] ?? '' ),
+						(string) ( $issue['hook_name'] ?? '' ),
+						(string) ( $issue['user_login'] ?? $issue['user_identifier'] ?? '' ),
+					)
+				)
+			)
+		);
+
+		return false !== strpos( $haystack, strtolower( $path_search ) );
 	}
 
 	private function issue_matches_date_range( array $issue, string $date_from, string $date_to ): bool {
@@ -2040,6 +2249,35 @@ class WSR_Admin_Page {
 
 	private function get_timeline_actor_label( array $event ): string {
 		return $this->format_user_label( absint( $event['actor_user_id'] ?? 0 ) );
+	}
+
+	private function get_issue_subject_label( array $issue ): string {
+		$type = strtolower( trim( (string) ( $issue['type'] ?? '' ) ) );
+
+		if ( 'vulnerability' === $type ) {
+			$component_name = sanitize_text_field( (string) ( $issue['component_name'] ?? '' ) );
+			$component_slug = sanitize_text_field( (string) ( $issue['component_slug'] ?? '' ) );
+			$version        = sanitize_text_field( (string) ( $issue['installed_version'] ?? '' ) );
+			$parts          = array_filter( array( $component_name, $component_slug ? '(' . $component_slug . ')' : '', $version ? 'v' . $version : '' ) );
+
+			return ! empty( $parts ) ? implode( ' ', $parts ) : __( 'Component', 'website-security-radar' );
+		}
+
+		if ( 'cron' === $type ) {
+			return sanitize_text_field( (string) ( $issue['hook_name'] ?? __( 'Cron hook', 'website-security-radar' ) ) );
+		}
+
+		if ( 'user security' === $type ) {
+			$identifier = current_user_can( 'manage_options' )
+				? sanitize_text_field( (string) ( $issue['user_login'] ?? '' ) )
+				: sanitize_text_field( (string) ( $issue['user_identifier'] ?? '' ) );
+
+			return '' !== $identifier ? $identifier : __( 'Administrator account', 'website-security-radar' );
+		}
+
+		$display_path = WSR_Helpers::get_safe_display_path( (string) ( $issue['path'] ?? $issue['file'] ?? '' ) );
+
+		return '' !== $display_path ? $display_path : __( 'N/A', 'website-security-radar' );
 	}
 
 	private function issue_has_change_details( array $issue ): bool {

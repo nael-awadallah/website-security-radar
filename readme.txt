@@ -4,15 +4,15 @@ Tags: security, malware scanner, wordpress security, file monitor, hardening, fi
 Requires at least: 6.2
 Tested up to: 6.8
 Requires PHP: 8.0
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Website Security Radar is a lightweight WordPress security plugin that monitors file changes, detects suspicious code patterns, and provides clear hardening insights -- without external APIs or automatic file modifications.
+Website Security Radar is a lightweight WordPress security plugin that monitors file changes, detects suspicious code patterns, and provides clear hardening insights -- without automatic file modifications and with all remote checks disabled by default.
 
 == Description ==
 
-Website Security Radar helps you understand what is happening inside your WordPress installation -- without complexity, external dependencies, or heavy resource usage.
+Website Security Radar helps you understand what is happening inside your WordPress installation -- without complexity or heavy resource usage.
 
 It is designed for developers, agencies, and site owners who want a clean and transparent security dashboard.
 
@@ -36,6 +36,16 @@ Unlike many security plugins, this tool focuses on **visibility and control**, n
 * Review debug settings, XML-RPC exposure, file permissions, and more
 * Provide actionable recommendations
 
+**Optional Vulnerability Checks**
+* Disabled by default and fully opt-in
+* Check installed WordPress core, plugins, and themes against the selected provider
+* Only send component slugs and versions when enabled
+
+**Operational Review**
+* Review suspicious cron hooks and unusually frequent schedules
+* Monitor risky administrator account activity
+* Export a client-friendly print report that can be saved as PDF
+
 **Security Dashboard**
 * Simple and clear security score
 * Overview of detected issues
@@ -58,8 +68,8 @@ Unlike many security plugins, this tool focuses on **visibility and control**, n
 
 == What Makes It Different ==
 
-* No external APIs or third-party dependencies
-* No data collection or remote communication
+* No hidden remote requests
+* No data collection or tracking
 * No automatic file changes or risky cleanup actions
 * Lightweight and developer-friendly
 * Designed for transparency and control
@@ -93,7 +103,7 @@ No. This plugin is designed for detection and analysis only.
 
 = Does it send data to external services? =
 
-No. All scanning is performed locally within your WordPress installation.
+By default, no. All scanning is performed locally within your WordPress installation unless you explicitly enable vulnerability checks.
 
 = Does this plugin collect data or track users? =
 
@@ -101,7 +111,11 @@ No. The plugin does not track users, does not phone home, and does not send file
 
 = Are remote checks enabled by default? =
 
-No remote or vulnerability lookup feature is enabled by default in this release.
+No. Vulnerability checks are disabled unless enabled.
+
+= What data is sent when vulnerability checks are enabled? =
+
+Only the WordPress core version plus installed plugin and theme slugs and versions are sent to the selected provider. File contents, user data, database data, and absolute server paths are never sent.
 
 = Does it scan large files? =
 
@@ -123,3 +137,8 @@ No. The plugin does not modify files or configurations automatically.
 = 1.0.0 =
 * Initial release with file scanning, baseline comparison, malware detection, hardening checks, scheduled scans, alerts, and dashboard UI.
 * Added hidden backdoor heuristics for suspicious filenames, uploads PHP, disguised image shells, recent root PHP changes, and small obfuscated droppers.
+
+= 1.1.0 =
+* Added optional vulnerability check integration with explicit opt-in, provider selection, privacy notice, masked API key display, and manual AJAX trigger.
+* Added cron hook review checks and suspicious administrator activity monitoring.
+* Added a print-friendly client security report export with white-label settings.

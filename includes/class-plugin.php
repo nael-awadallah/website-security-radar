@@ -17,6 +17,10 @@ class WSR_Plugin {
 	private WSR_Baseline $baseline;
 	private WSR_Timeline $timeline;
 	private WSR_Notifier $notifier;
+	private WSR_Cron_Scanner $cron_scanner;
+	private WSR_User_Security_Monitor $user_security_monitor;
+	private WSR_Vulnerability_Service $vulnerability_service;
+	private WSR_Report $report;
 
 	public static function get_instance(): WSR_Plugin {
 		if ( null === self::$instance ) {
@@ -32,17 +36,23 @@ class WSR_Plugin {
 		$this->baseline   = new WSR_Baseline();
 		$this->timeline   = new WSR_Timeline();
 		$this->notifier   = new WSR_Notifier();
+		$this->cron_scanner = new WSR_Cron_Scanner();
+		$this->user_security_monitor = new WSR_User_Security_Monitor();
+		$this->vulnerability_service = new WSR_Vulnerability_Service();
+		$this->report = new WSR_Report( $this );
 		$this->admin_page = new WSR_Admin_Page( $this );
 	}
 
 	public function init(): void {
 		$this->baseline->migrate();
 		$this->cron->register();
+		$this->user_security_monitor->register();
 		$this->admin_page->register();
 
 		add_action( 'admin_init', array( $this->settings, 'register' ) );
 		add_action( 'wp_ajax_' . WSR_Helpers::AJAX_SCAN_ACTION, array( $this, 'handle_manual_scan_ajax' ) );
 		add_action( 'wp_ajax_' . WSR_Helpers::AJAX_BASELINE_ACTION, array( $this, 'handle_create_baseline_ajax' ) );
+		add_action( 'wp_ajax_' . WSR_Helpers::AJAX_VULNERABILITY_ACTION, array( $this, 'handle_vulnerability_check_ajax' ) );
 		add_action( 'update_option_' . WSR_Helpers::SETTINGS_OPTION, array( $this, 'handle_settings_updated' ), 10, 2 );
 	}
 
@@ -51,6 +61,10 @@ class WSR_Plugin {
 
 		if ( false === get_option( WSR_Helpers::TIMELINE_OPTION, false ) ) {
 			add_option( WSR_Helpers::TIMELINE_OPTION, array(), '', false );
+		}
+
+		if ( false === get_option( WSR_Helpers::USER_ACTIVITY_OPTION, false ) ) {
+			add_option( WSR_Helpers::USER_ACTIVITY_OPTION, array(), '', false );
 		}
 
 		self::get_instance()->cron->maybe_schedule( WSR_Helpers::get_settings() );
@@ -64,48 +78,13 @@ class WSR_Plugin {
 		$results = get_option( WSR_Helpers::RESULTS_OPTION, array() );
 
 		if ( ! is_array( $results ) || empty( $results ) ) {
-			return array(
-				'scanned_at'       => '',
-				'score'            => 100,
-				'risk_level'       => 'Safe',
-				'summary'          => array(
-					'total_scanned_files' => 0,
-					'new_files'           => 0,
-					'modified_files'      => 0,
-					'deleted_files'       => 0,
-					'suspicious_files'    => 0,
-					'hardening_warnings'  => 0,
-					'critical_issues'     => 0,
-					'ignored_findings'    => 0,
-				),
-				'severity_counts'  => array(
-					'critical' => 0,
-					'high'     => 0,
-					'medium'   => 0,
-					'low'      => 0,
-				),
-				'score_breakdown'   => array(
-					'score'                => 100,
-					'total_deduction'      => 0,
-					'deduction_per_severity' => array(
-						'critical' => 20,
-						'high'     => 10,
-						'medium'   => 5,
-						'low'      => 2,
-					),
-					'categories'           => array(),
-				),
-				'issues'           => array(),
-				'baseline'         => array(
-					'has_baseline' => false,
-				),
-			);
+			return WSR_Helpers::get_default_results();
 		}
 
-		return $results;
+		return $this->normalize_results( $results );
 	}
 
-	public function run_scan( bool $persist = true ): array {
+	public function run_scan( bool $persist = true, string $scan_type = 'manual', bool $refresh_vulnerabilities = false ): array {
 		$settings    = WSR_Helpers::get_settings();
 		$ignore_list = WSR_Helpers::get_ignore_list();
 		$scanner     = new WSR_File_Scanner( $settings, $ignore_list );
@@ -118,47 +97,39 @@ class WSR_Plugin {
 
 		$hardening_checker = new WSR_Hardening_Checker();
 		$issues            = array_merge( $issues, $hardening_checker->run( $inventory ) );
-		$partition         = WSR_Helpers::split_ignored_issues( $issues, $ignore_list );
+		$issues            = array_merge( $issues, $this->cron_scanner->scan() );
+		$issues            = array_merge( $issues, $this->user_security_monitor->scan() );
+
+		$vulnerability_data = $this->get_latest_vulnerability_data( $settings );
+
+		if ( $refresh_vulnerabilities || ( 'scheduled' === $scan_type && ! empty( $settings['enable_vulnerability_checks'] ) ) ) {
+			$vulnerability_data = $this->vulnerability_service->run_check( $settings );
+		}
+
+		$issues          = array_merge( $issues, $vulnerability_data['issues'] ?? array() );
+		$partition       = WSR_Helpers::split_ignored_issues( $issues, $ignore_list );
 		$ignored_issues    = $partition['ignored'];
 		$issues            = WSR_Helpers::apply_review_status( $partition['visible'] );
 		$severity_counts   = WSR_Helpers::count_severity( $issues );
 		$score_breakdown   = WSR_Helpers::calculate_security_score_breakdown( $issues );
 		$score             = (int) ( $score_breakdown['score'] ?? 100 );
 
-		$results = array(
-			'scanned_at'      => gmdate( 'c' ),
-			'score'           => $score,
-			'risk_level'      => WSR_Helpers::get_risk_level( $score ),
-			'summary'         => array(
-				'total_scanned_files' => count( $inventory ),
-				'new_files'           => count( $baseline['new_files'] ),
-				'modified_files'      => count( $baseline['modified'] ),
-				'deleted_files'       => count( $baseline['deleted'] ),
-				'suspicious_files'    => count(
-					array_filter(
-						$issues,
-						static function ( array $issue ): bool {
-							$type = strtolower( (string) ( $issue['type'] ?? '' ) );
-							return in_array( $type, array( 'malware', 'suspicious pattern', 'potential risk', 'file change' ), true );
-						}
-					)
-				),
-				'hardening_warnings'  => count(
-					array_filter(
-						$issues,
-						static function ( array $issue ): bool {
-							return in_array( $issue['type'] ?? '', array( 'hardening', 'updates', 'permissions', 'exposure' ), true );
-						}
-					)
-				),
-				'critical_issues'     => (int) ( $severity_counts['critical'] ?? 0 ),
-				'ignored_findings'    => count( $ignored_issues ),
+		$results = $this->build_results(
+			array(
+				'scanned_at'             => gmdate( 'c' ),
+				'score'                  => $score,
+				'risk_level'             => WSR_Helpers::get_risk_level( $score ),
+				'severity_counts'        => $severity_counts,
+				'score_breakdown'        => $score_breakdown,
+				'issues'                 => $issues,
+				'baseline'               => $baseline,
+				'inventory_count'        => count( $inventory ),
+				'vulnerability_checks'   => $vulnerability_data['summary'] ?? array(),
 			),
-			'severity_counts' => $severity_counts,
-			'score_breakdown' => $score_breakdown,
-			'issues'          => $issues,
-			'baseline'        => $baseline,
-			'inventory_count' => count( $inventory ),
+			count( $inventory ),
+			$baseline,
+			$issues,
+			count( $ignored_issues )
 		);
 
 		if ( $persist ) {
@@ -166,7 +137,54 @@ class WSR_Plugin {
 			$this->notifier->maybe_send_critical_alert( $results, $settings );
 		}
 
-		$this->record_scan_timeline_events( $results, $persist ? 'manual' : 'scheduled' );
+		$this->record_scan_timeline_events( $results, $scan_type );
+
+		return $results;
+	}
+
+	public function run_vulnerability_check( bool $persist = true ): array {
+		$settings            = WSR_Helpers::get_settings();
+		$latest_results      = $this->get_latest_results();
+		$vulnerability_data  = $this->vulnerability_service->run_check( $settings );
+		$non_vuln_issues     = array_values(
+			array_filter(
+				$latest_results['issues'] ?? array(),
+				static function ( array $issue ): bool {
+					return 'vulnerability' !== strtolower( (string) ( $issue['type'] ?? '' ) );
+				}
+			)
+		);
+		$issues              = array_merge( $non_vuln_issues, $vulnerability_data['issues'] ?? array() );
+		$partition           = WSR_Helpers::split_ignored_issues( $issues );
+		$visible_issues      = WSR_Helpers::apply_review_status( $partition['visible'] );
+		$severity_counts     = WSR_Helpers::count_severity( $visible_issues );
+		$score_breakdown     = WSR_Helpers::calculate_security_score_breakdown( $visible_issues );
+		$score               = (int) ( $score_breakdown['score'] ?? 100 );
+
+		$results = $this->build_results(
+			array(
+				'scanned_at'           => $latest_results['scanned_at'] ?? '',
+				'score'                => $score,
+				'risk_level'           => WSR_Helpers::get_risk_level( $score ),
+				'severity_counts'      => $severity_counts,
+				'score_breakdown'      => $score_breakdown,
+				'issues'               => $visible_issues,
+				'baseline'             => $latest_results['baseline'] ?? array( 'has_baseline' => false ),
+				'inventory_count'      => (int) ( $latest_results['inventory_count'] ?? 0 ),
+				'vulnerability_checks' => $vulnerability_data['summary'] ?? array(),
+			),
+			(int) ( $latest_results['inventory_count'] ?? 0 ),
+			is_array( $latest_results['baseline'] ?? null ) ? $latest_results['baseline'] : array( 'has_baseline' => false ),
+			$visible_issues,
+			count( $partition['ignored'] )
+		);
+
+		if ( $persist ) {
+			update_option( WSR_Helpers::RESULTS_OPTION, $results, false );
+			$this->notifier->maybe_send_critical_alert( $results, $settings );
+		}
+
+		$this->record_vulnerability_timeline_event( $results['vulnerability_checks'] ?? array() );
 
 		return $results;
 	}
@@ -206,7 +224,7 @@ class WSR_Plugin {
 					'actor_user_id' => get_current_user_id(),
 				)
 			);
-			$results = $this->run_scan( true );
+			$results = $this->run_scan( true, 'manual', false );
 			wp_send_json_success(
 				array(
 					'message' => __( 'Manual scan completed.', 'website-security-radar' ),
@@ -217,6 +235,27 @@ class WSR_Plugin {
 			wp_send_json_error(
 				array(
 					'message' => __( 'The scan could not be completed. Check PHP error logs for details.', 'website-security-radar' ),
+				),
+				500
+			);
+		}
+	}
+
+	public function handle_vulnerability_check_ajax(): void {
+		$this->assert_ajax_access();
+
+		try {
+			$results = $this->run_vulnerability_check( true );
+			wp_send_json_success(
+				array(
+					'message' => __( 'Vulnerability check completed.', 'website-security-radar' ),
+					'results' => $results,
+				)
+			);
+		} catch ( Throwable $exception ) {
+			wp_send_json_error(
+				array(
+					'message' => __( 'The vulnerability check could not be completed. Check PHP error logs for details.', 'website-security-radar' ),
 				),
 				500
 			);
@@ -263,6 +302,10 @@ class WSR_Plugin {
 
 	public function add_timeline_event( array $event ): void {
 		$this->timeline->add_event( $event );
+	}
+
+	public function get_report(): WSR_Report {
+		return $this->report;
 	}
 
 	public function get_timeline_events( array $filters = array() ): array {
@@ -444,5 +487,115 @@ class WSR_Plugin {
 				);
 			}
 		}
+	}
+
+	private function build_results( array $results, int $inventory_count, array $baseline, array $issues, int $ignored_findings ): array {
+		$summary = array(
+			'total_scanned_files'    => $inventory_count,
+			'new_files'              => count( $baseline['new_files'] ?? array() ),
+			'modified_files'         => count( $baseline['modified'] ?? array() ),
+			'deleted_files'          => count( $baseline['deleted'] ?? array() ),
+			'suspicious_files'       => count(
+				array_filter(
+					$issues,
+					static function ( array $issue ): bool {
+						$type = strtolower( (string) ( $issue['type'] ?? '' ) );
+						return in_array( $type, array( 'malware', 'suspicious pattern', 'potential risk', 'file change' ), true );
+					}
+				)
+			),
+			'hardening_warnings'     => count(
+				array_filter(
+					$issues,
+					static function ( array $issue ): bool {
+						return in_array( strtolower( (string) ( $issue['type'] ?? '' ) ), array( 'hardening', 'updates', 'permissions', 'exposure' ), true );
+					}
+				)
+			),
+			'critical_issues'        => (int) ( $results['severity_counts']['critical'] ?? 0 ),
+			'ignored_findings'       => $ignored_findings,
+			'cron_findings'          => count(
+				array_filter(
+					$issues,
+					static function ( array $issue ): bool {
+						return 'cron' === strtolower( (string) ( $issue['type'] ?? '' ) );
+					}
+				)
+			),
+			'user_security_findings' => count(
+				array_filter(
+					$issues,
+					static function ( array $issue ): bool {
+						return 'user security' === strtolower( (string) ( $issue['type'] ?? '' ) );
+					}
+				)
+			),
+			'vulnerability_findings' => count(
+				array_filter(
+					$issues,
+					static function ( array $issue ): bool {
+						return 'vulnerability' === strtolower( (string) ( $issue['type'] ?? '' ) );
+					}
+				)
+			),
+		);
+
+		$results['summary'] = $summary;
+
+		return $this->normalize_results( $results );
+	}
+
+	private function normalize_results( array $results ): array {
+		return array_replace_recursive( WSR_Helpers::get_default_results(), $results );
+	}
+
+	private function get_latest_vulnerability_data( array $settings ): array {
+		$results = $this->get_latest_results();
+
+		if ( empty( $settings['enable_vulnerability_checks'] ) ) {
+			return array(
+				'issues'  => array(),
+				'summary' => $this->vulnerability_service->get_status_summary( $results, $settings ),
+			);
+		}
+
+		$issues  = array_values(
+			array_filter(
+				$results['issues'] ?? array(),
+				static function ( array $issue ): bool {
+					return 'vulnerability' === strtolower( (string) ( $issue['type'] ?? '' ) );
+				}
+			)
+		);
+
+		return array(
+			'issues'   => $issues,
+			'summary'  => $this->vulnerability_service->get_status_summary( $results, $settings ),
+		);
+	}
+
+	private function record_vulnerability_timeline_event( array $summary ): void {
+		$status = sanitize_key( (string) ( $summary['status'] ?? '' ) );
+
+		if ( '' === $status || 'disabled' === $status ) {
+			return;
+		}
+
+		$message = 'completed' === $status
+			? sprintf(
+				/* translators: %d: vulnerability findings count. */
+				__( 'Vulnerability check completed with %d matching finding(s).', 'website-security-radar' ),
+				(int) ( $summary['vulnerabilities_found'] ?? 0 )
+			)
+			: sanitize_text_field( (string) ( $summary['error_message'] ?? __( 'Vulnerability check needs configuration.', 'website-security-radar' ) ) );
+
+		$this->timeline->add_event(
+			array(
+				'type'          => 'vulnerability_check_completed',
+				'severity'      => ! empty( $summary['critical_found'] ) ? 'critical' : ( 'completed' === $status ? 'info' : 'medium' ),
+				'message'       => $message,
+				'actor_user_id' => get_current_user_id(),
+			)
+		);
 	}
 }

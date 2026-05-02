@@ -60,8 +60,9 @@ jQuery(function ($) {
 
 	function runAction(actionKey, $button) {
 		const isScan = actionKey === 'scan';
-		const ajaxAction = isScan ? wsrAdmin.scanAction : wsrAdmin.baselineAction;
-		const loadingText = isScan ? wsrAdmin.strings.scanning : wsrAdmin.strings.baselining;
+		const isVulnerability = actionKey === 'vulnerability';
+		const ajaxAction = isScan ? wsrAdmin.scanAction : (isVulnerability ? wsrAdmin.vulnerabilityAction : wsrAdmin.baselineAction);
+		const loadingText = isScan ? wsrAdmin.strings.scanning : (isVulnerability ? wsrAdmin.strings.vulnerabilityChecking : wsrAdmin.strings.baselining);
 		const originalText = $button.text();
 		const $actionsCard = $button.closest('[data-wsr-actions-card]');
 		const $actionButtons = $actionsCard.find('.wsr-ajax-button');
@@ -71,7 +72,7 @@ jQuery(function ($) {
 			nonce: wsrAdmin.nonce
 		};
 
-		if (!isScan) {
+		if (!isScan && !isVulnerability) {
 			requestData.label = $('#wsr-baseline-label').val() || '';
 		}
 
