@@ -97,6 +97,7 @@ class WSR_Admin_Page {
 		$recommendations    = $this->get_recommendations( $results );
 		$stat_cards         = $this->get_dashboard_stat_cards( $summary );
 		$scan_summary       = $this->get_dashboard_scan_summary( $results, $active_baseline, $settings );
+		$score_display      = max( 0, min( 100, $score ) );
 		?>
 		<div class="wrap wsr-wrap">
 			<?php $this->render_header( __( 'Dashboard', 'website-security-radar' ) ); ?>
@@ -131,8 +132,8 @@ class WSR_Admin_Page {
 							<?php endif; ?>
 						</div>
 						<div class="wsr-score-visual">
-							<div class="wsr-score-ring wsr-risk-<?php echo esc_attr( $risk_level ); ?>" style="--wsr-score: <?php echo esc_attr( (string) max( 0, min( 100, $score ) ) ); ?>;">
-								<span><?php echo esc_html( (string) $score ); ?></span>
+							<div class="wsr-score-ring wsr-risk-<?php echo esc_attr( $risk_level ); ?>" style="--wsr-score: <?php echo esc_attr( (string) $score_display ); ?>; --wsr-score-angle: <?php echo esc_attr( (string) ( $score_display * 3.6 ) ); ?>deg;">
+								<span><?php echo esc_html( (string) $score_display ); ?></span>
 								<small>/100</small>
 							</div>
 						</div>
