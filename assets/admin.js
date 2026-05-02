@@ -1,4 +1,38 @@
 jQuery(function ($) {
+	function showNotice(message, type) {
+		const noticeClass = type === 'success' ? 'notice-success' : 'notice-error';
+		const $wrap = $('.wsr-wrap').first();
+
+		if (!$wrap.length) {
+			return;
+		}
+
+		$wrap.find('.wsr-runtime-notice').remove();
+
+		const $notice = $('<div />', {
+			class: 'notice is-dismissible wsr-runtime-notice ' + noticeClass
+		});
+		const $content = $('<p />').text(message);
+		const $dismiss = $('<button />', {
+			type: 'button',
+			class: 'notice-dismiss'
+		}).append($('<span />', {
+			class: 'screen-reader-text',
+			text: 'Dismiss this notice.'
+		}));
+
+		$dismiss.on('click', function () {
+			$notice.remove();
+		});
+
+		$notice.append($content, $dismiss);
+		$wrap.prepend($notice);
+
+		window.setTimeout(function () {
+			$notice[0].scrollIntoView({ behavior: 'smooth', block: 'start' });
+		}, 10);
+	}
+
 	function replaceResultsContent(html) {
 		const parser = new window.DOMParser();
 		const doc = parser.parseFromString(html, 'text/html');
@@ -86,14 +120,16 @@ jQuery(function ($) {
 
 		$.post(wsrAdmin.ajaxUrl, requestData).done(function (response) {
 			if (response && response.success) {
-				window.alert(response.data.message || wsrAdmin.strings.success);
-				window.location.reload();
+				showNotice(response.data.message || wsrAdmin.strings.success, 'success');
+				window.setTimeout(function () {
+					window.location.reload();
+				}, 900);
 				return;
 			}
 
-			window.alert((response && response.data && response.data.message) || wsrAdmin.strings.error);
+			showNotice((response && response.data && response.data.message) || wsrAdmin.strings.error, 'error');
 		}).fail(function () {
-			window.alert(wsrAdmin.strings.error);
+			showNotice(wsrAdmin.strings.error, 'error');
 		}).always(function () {
 			$actionsCard.removeClass('wsr-loading');
 			$actionInputs.prop('disabled', false);
