@@ -20,8 +20,10 @@ class WSR_Helpers {
 	const USER_ACTIVITY_OPTION  = 'website_security_radar_user_activity';
 	const SCAN_STATUS_OPTION    = 'website_security_radar_scan_status';
 	const VULNERABILITY_CACHE_OPTION = 'website_security_radar_vulnerability_cache';
+	const CRITICAL_ALERT_STATE_OPTION = 'website_security_radar_critical_alert_state';
 	const SCAN_LOCK_TRANSIENT   = 'website_security_radar_scan_lock';
 	const CRON_HOOK             = 'website_security_radar_daily_scan';
+	const VULNERABILITY_RETRY_HOOK = 'website_security_radar_vulnerability_retry';
 	const AJAX_SCAN_ACTION      = 'website_security_radar_run_scan';
 	const AJAX_BASELINE_ACTION  = 'website_security_radar_create_baseline';
 	const AJAX_VULNERABILITY_ACTION = 'website_security_radar_run_vulnerability_check';
@@ -29,6 +31,7 @@ class WSR_Helpers {
 	const AJAX_NONCE_ACTION     = 'website_security_radar_ajax_action';
 	const REPORT_NONCE_ACTION   = 'website_security_radar_view_report';
 	const TIMELINE_DEFAULT_LIMIT = 500;
+	const SCAN_LOCK_TTL         = 10 * MINUTE_IN_SECONDS;
 
 	public static function get_ignore_rule_types(): array {
 		return array(
@@ -51,6 +54,8 @@ class WSR_Helpers {
 			'scan_root_files'       => 1,
 			'scan_batch_size'       => 500,
 			'timeline_event_limit'  => self::TIMELINE_DEFAULT_LIMIT,
+			'scheduled_scan_time'   => '03:00',
+			'max_baselines'         => 10,
 			'enable_vulnerability_checks' => 0,
 			'vulnerability_provider'      => 'mock',
 			'vulnerability_api_key'       => '',
@@ -175,9 +180,17 @@ class WSR_Helpers {
 	public static function get_vulnerability_provider_options(): array {
 		return array(
 			'mock'       => __( 'Mock Provider (Testing Only)', 'website-security-radar' ),
-			'wpscan'     => __( 'WPScan Vulnerability Database', 'website-security-radar' ),
+			'wpscan'     => __( 'WPScan Vulnerability Database (Coming Soon)', 'website-security-radar' ),
 			'patchstack' => __( 'Patchstack (Coming Soon)', 'website-security-radar' ),
 		);
+	}
+
+	public static function get_available_vulnerability_providers(): array {
+		return array( 'mock' );
+	}
+
+	public static function is_vulnerability_provider_available( string $provider_key ): bool {
+		return in_array( sanitize_key( $provider_key ), self::get_available_vulnerability_providers(), true );
 	}
 
 	public static function get_severity_levels(): array {

@@ -51,11 +51,6 @@ class WSR_Hardening_Checker {
 			$issues[] = $this->issue( 'medium', 'Hardening', '.htaccess', __( 'Directory listing protection not detected', 'website-security-radar' ), __( 'Add an explicit `Options -Indexes` rule at the web root if your server supports it.', 'website-security-radar' ) );
 		}
 
-		$admin_count = $this->get_admin_count();
-		if ( $admin_count > 3 ) {
-			$issues[] = $this->issue( 'low', 'Hardening', 'Users', __( 'Multiple administrator accounts detected', 'website-security-radar' ), sprintf( __( 'The site currently has %d administrator accounts. Review whether all of them are expected.', 'website-security-radar' ), $admin_count ) );
-		}
-
 		if ( $this->is_core_outdated() ) {
 			$issues[] = $this->issue( 'high', 'Updates', 'WordPress Core', __( 'WordPress core update available', 'website-security-radar' ), __( 'Apply available WordPress core updates after validation.', 'website-security-radar' ) );
 		}
@@ -154,17 +149,6 @@ class WSR_Hardening_Checker {
 		$routes = rest_get_server()->get_routes();
 
 		return isset( $routes['/wp/v2/users'] ) || isset( $routes['/wp/v2/users/(?P<id>[\d]+)'] );
-	}
-
-	private function get_admin_count(): int {
-		$users = get_users(
-			array(
-				'role'   => 'administrator',
-				'fields' => 'ID',
-			)
-		);
-
-		return is_array( $users ) ? count( $users ) : 0;
 	}
 
 	private function is_core_outdated(): bool {

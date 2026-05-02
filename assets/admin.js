@@ -33,6 +33,9 @@ jQuery(function ($) {
 		}, 10);
 	}
 
+	let resultsController = null;
+	let resultsRequestId = 0;
+
 	function replaceResultsContent(html) {
 		const parser = new window.DOMParser();
 		const doc = parser.parseFromString(html, 'text/html');
@@ -58,6 +61,7 @@ jQuery(function ($) {
 	function loadResults(url, pushState) {
 		const targetUrl = new URL(url, window.location.origin);
 		const resultsContent = document.querySelector('#wsr-results-content');
+		const requestId = ++resultsRequestId;
 
 		if (!resultsContent) {
 			window.location.href = targetUrl.toString();
@@ -66,8 +70,15 @@ jQuery(function ($) {
 
 		resultsContent.classList.add('wsr-loading');
 
+		if (resultsController) {
+			resultsController.abort();
+		}
+
+		resultsController = window.AbortController ? new window.AbortController() : null;
+
 		window.fetch(targetUrl.toString(), {
 			credentials: 'same-origin',
+			signal: resultsController ? resultsController.signal : undefined,
 			headers: {
 				'X-Requested-With': 'XMLHttpRequest'
 			}
@@ -78,13 +89,25 @@ jQuery(function ($) {
 
 			return response.text();
 		}).then(function (html) {
+			if (requestId !== resultsRequestId) {
+				return;
+			}
+
 			replaceResultsContent(html);
 			if (pushState) {
 				window.history.pushState({}, '', targetUrl.toString());
 			}
-		}).catch(function () {
+		}).catch(function (error) {
+			if (error && error.name === 'AbortError') {
+				return;
+			}
+
 			window.location.href = targetUrl.toString();
 		}).finally(function () {
+			if (requestId !== resultsRequestId) {
+				return;
+			}
+
 			const updatedContent = document.querySelector('#wsr-results-content');
 			if (updatedContent) {
 				updatedContent.classList.remove('wsr-loading');
@@ -98,6 +121,8 @@ jQuery(function ($) {
 		const ajaxAction = isScan ? wsrAdmin.scanAction : (isVulnerability ? wsrAdmin.vulnerabilityAction : wsrAdmin.baselineAction);
 		const loadingText = isScan ? wsrAdmin.strings.scanning : (isVulnerability ? wsrAdmin.strings.vulnerabilityChecking : wsrAdmin.strings.baselining);
 		const originalText = $button.text();
+		let elapsedTimer = null;
+		const startedAt = Date.now();
 		const $actionsCard = $button.closest('[data-wsr-actions-card]');
 		const $actionButtons = $actionsCard.find('.wsr-ajax-button');
 		const $actionInputs = $actionsCard.find('input, button');
@@ -118,12 +143,19 @@ jQuery(function ($) {
 		});
 		$button.addClass('wsr-loading').text(loadingText);
 
+		if (isScan) {
+			elapsedTimer = window.setInterval(function () {
+				const seconds = Math.max(1, Math.floor((Date.now() - startedAt) / 1000));
+				$button.text(loadingText + ' ' + seconds + 's');
+			}, 1000);
+		}
+
 		$.post(wsrAdmin.ajaxUrl, requestData).done(function (response) {
 			if (response && response.success) {
 				showNotice(response.data.message || wsrAdmin.strings.success, 'success');
 				window.setTimeout(function () {
 					window.location.reload();
-				}, 900);
+				}, 2800);
 				return;
 			}
 
@@ -131,6 +163,10 @@ jQuery(function ($) {
 		}).fail(function () {
 			showNotice(wsrAdmin.strings.error, 'error');
 		}).always(function () {
+			if (elapsedTimer) {
+				window.clearInterval(elapsedTimer);
+			}
+
 			$actionsCard.removeClass('wsr-loading');
 			$actionInputs.prop('disabled', false);
 			$actionButtons.each(function () {
@@ -208,12 +244,17 @@ jQuery(function ($) {
 		loadResults(href, true);
 	});
 
+	let filterChangeTimer = null;
+
 	$(document).on('change', '#wsr-filter-severity, #wsr-filter-type, #wsr-filter-date-from, #wsr-filter-date-to, #wsr-filter-review-status, #wsr-filter-confidence, #wsr-filter-new-only', function () {
 		if (!window.fetch || !window.DOMParser) {
 			return;
 		}
 
-		$('#wsr-filter-form').trigger('submit');
+		window.clearTimeout(filterChangeTimer);
+		filterChangeTimer = window.setTimeout(function () {
+			$('#wsr-filter-form').trigger('submit');
+		}, 275);
 	});
 
 	let pathSearchTimer = null;
@@ -244,4 +285,18 @@ jQuery(function ($) {
 			$changeDetailsPanel.trigger('focus')[0].scrollIntoView({ behavior: 'smooth', block: 'start' });
 		}, 50);
 	}
+
+	$('[data-wsr-running-since]').each(function () {
+		const element = this;
+		const started = parseInt(element.getAttribute('data-wsr-running-since'), 10);
+
+		if (!started) {
+			return;
+		}
+
+		window.setInterval(function () {
+			const seconds = Math.max(0, Math.floor(Date.now() / 1000) - started);
+			element.textContent = 'Scan running for ' + seconds + ' seconds.';
+		}, 1000);
+	});
 });

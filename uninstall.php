@@ -21,5 +21,7 @@ delete_option( WSR_Helpers::TIMELINE_OPTION );
 delete_option( WSR_Helpers::USER_ACTIVITY_OPTION );
 delete_option( WSR_Helpers::SCAN_STATUS_OPTION );
 delete_option( WSR_Helpers::VULNERABILITY_CACHE_OPTION );
+delete_option( WSR_Helpers::CRITICAL_ALERT_STATE_OPTION );
 delete_transient( WSR_Helpers::SCAN_LOCK_TRANSIENT );
 wp_clear_scheduled_hook( WSR_Helpers::CRON_HOOK );
+wp_clear_scheduled_hook( WSR_Helpers::VULNERABILITY_RETRY_HOOK );

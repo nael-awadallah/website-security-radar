@@ -25,6 +25,7 @@ class WSR_Admin_Page {
 		add_action( 'admin_post_wsr_mark_reviewed', array( $this, 'handle_mark_reviewed' ) );
 		add_action( 'admin_post_wsr_ignore_path', array( $this, 'handle_ignore_path' ) );
 		add_action( 'admin_post_wsr_rescan_path', array( $this, 'handle_rescan_path' ) );
+		add_action( 'admin_post_wsr_clear_scan_lock', array( $this, 'handle_clear_scan_lock' ) );
 		add_action( 'admin_post_wsr_export_findings_csv', array( $this, 'handle_export_findings_csv' ) );
 		add_action( 'admin_post_wsr_add_ignore_rule', array( $this, 'handle_add_ignore_rule' ) );
 		add_action( 'admin_post_wsr_toggle_ignore_rule', array( $this, 'handle_toggle_ignore_rule' ) );
@@ -106,6 +107,7 @@ class WSR_Admin_Page {
 		$recommendations    = $this->get_recommendations( $results );
 		$stat_cards         = $this->get_dashboard_stat_cards( $summary );
 		$scan_summary       = $this->get_dashboard_scan_summary( $results, $active_baseline, $settings );
+		$scan_lock          = $this->plugin->get_scan_lock();
 		$score_display      = max( 0, min( 100, $score ) );
 		$score_angle        = $score_display * 3.6;
 		?>
@@ -143,7 +145,7 @@ class WSR_Admin_Page {
 							<?php endif; ?>
 						</div>
 						<div class="wsr-score-visual">
-							<div class="wsr-score-ring wsr-risk-<?php echo esc_attr( $risk_level ); ?><?php echo 0 === $score_display ? ' wsr-score-ring-zero' : ''; ?>" style="--wsr-score: <?php echo esc_attr( (string) $score_display ); ?>; --wsr-score-angle: <?php echo esc_attr( (string) $score_angle ); ?>deg;" aria-label="<?php echo esc_attr( sprintf( __( 'Security Score: %d out of 100', 'website-security-radar' ), $score_display ) ); ?>">
+							<div class="wsr-score-ring wsr-risk-<?php echo esc_attr( $risk_level ); ?><?php echo 0 === $score_display ? ' wsr-score-ring-zero' : ''; ?>" style="--wsr-score: <?php echo esc_attr( (string) $score_display ); ?>; --wsr-score-angle: <?php echo esc_attr( (string) $score_angle ); ?>deg;" role="img" aria-label="<?php echo esc_attr( sprintf( __( 'Security Score: %1$d out of 100. Risk level: %2$s.', 'website-security-radar' ), $score_display, (string) ( $results['risk_level'] ?? 'Safe' ) ) ); ?>">
 								<span><?php echo esc_html( (string) $score_display ); ?></span>
 								<small>/100</small>
 							</div>
@@ -226,10 +228,21 @@ class WSR_Admin_Page {
 								<p><?php esc_html_e( 'Run the optional component version lookup using the selected provider.', 'website-security-radar' ); ?></p>
 							</div>
 							<div class="wsr-action-item">
-								<a class="button button-secondary" href="<?php echo esc_url( $this->plugin->get_report()->get_report_url() ); ?>"><?php esc_html_e( 'Export Client Report', 'website-security-radar' ); ?></a>
+								<a class="button button-secondary" href="<?php echo esc_url( $this->plugin->get_report()->get_report_url() ); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e( 'Export Client Report', 'website-security-radar' ); ?></a>
 								<p><?php esc_html_e( 'Open a print-friendly report that can be saved as PDF from the browser.', 'website-security-radar' ); ?></p>
 							</div>
 						</div>
+						<?php if ( ! empty( $scan_lock ) ) : ?>
+							<div class="notice notice-warning inline">
+								<p>
+									<?php echo esc_html( sprintf( __( 'A scan appears to be in progress since %s.', 'website-security-radar' ), WSR_Helpers::format_datetime( (string) ( $scan_lock['started_at'] ?? '' ) ) ) ); ?>
+									<span data-wsr-running-since="<?php echo esc_attr( (string) strtotime( (string) ( $scan_lock['started_at'] ?? '' ) ) ); ?>"><?php echo esc_html( sprintf( __( 'Scan running for %d seconds.', 'website-security-radar' ), max( 0, time() - (int) strtotime( (string) ( $scan_lock['started_at'] ?? '' ) ) ) ) ); ?></span>
+									<?php if ( $this->plugin->is_scan_lock_stale( $scan_lock ) ) : ?>
+										<a href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=wsr_clear_scan_lock' ), WSR_Helpers::ADMIN_NONCE_ACTION ) ); ?>"><?php esc_html_e( 'Clear stale scan lock', 'website-security-radar' ); ?></a>
+									<?php endif; ?>
+								</p>
+							</div>
+						<?php endif; ?>
 						<div class="wsr-card-meta">
 							<span><?php echo esc_html( sprintf( __( '%d files scanned', 'website-security-radar' ), (int) ( $summary['total_scanned_files'] ?? 0 ) ) ); ?></span>
 							<span><?php echo esc_html( sprintf( __( '%d active issues', 'website-security-radar' ), count( $results['issues'] ?? array() ) ) ); ?></span>
@@ -342,7 +355,8 @@ class WSR_Admin_Page {
 
 	public function render_settings_page(): void {
 		$this->assert_capability();
-		$settings = WSR_Helpers::get_settings();
+		$settings       = WSR_Helpers::get_settings();
+		$next_scheduled = wp_next_scheduled( WSR_Helpers::CRON_HOOK );
 		?>
 		<div class="wrap wsr-wrap">
 			<?php $this->render_header( __( 'Settings', 'website-security-radar' ) ); ?>
@@ -379,13 +393,19 @@ class WSR_Admin_Page {
 							<div class="wsr-setting-row wsr-setting-field">
 								<label class="wsr-setting-heading" for="wsr-max-file-size"><?php esc_html_e( 'Max file size to scan', 'website-security-radar' ); ?></label>
 								<input id="wsr-max-file-size" type="number" class="small-text" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[max_file_size]" value="<?php echo esc_attr( (string) $settings['max_file_size'] ); ?>" min="1024" step="1024" />
-								<p class="description"><?php esc_html_e( 'Files larger than this limit are skipped for content scanning. Default: 2097152 bytes (2MB).', 'website-security-radar' ); ?></p>
+								<p class="description"><?php echo esc_html( sprintf( __( 'Files larger than this limit are skipped for content scanning. Current: %s.', 'website-security-radar' ), $this->format_file_size( (int) $settings['max_file_size'] ) ) ); ?></p>
 							</div>
 							<div class="wsr-setting-row wsr-setting-field">
 								<label class="wsr-setting-heading" for="wsr-scan-batch-size"><?php esc_html_e( 'Scan progress batch size', 'website-security-radar' ); ?></label>
 								<input id="wsr-scan-batch-size" type="number" class="small-text" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[scan_batch_size]" value="<?php echo esc_attr( (string) ( $settings['scan_batch_size'] ?? 500 ) ); ?>" min="100" max="2000" step="100" />
 								<p class="description"><?php esc_html_e( 'Controls how often long scans update progress status while processing large file inventories.', 'website-security-radar' ); ?></p>
 							</div>
+							<div class="wsr-setting-row wsr-setting-field">
+								<label class="wsr-setting-heading" for="wsr-max-baselines"><?php esc_html_e( 'Maximum saved baselines', 'website-security-radar' ); ?></label>
+								<input id="wsr-max-baselines" type="number" class="small-text" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[max_baselines]" value="<?php echo esc_attr( (string) ( $settings['max_baselines'] ?? 10 ) ); ?>" min="1" max="50" step="1" />
+								<p class="description"><?php esc_html_e( 'Old inactive baselines are removed when this limit is exceeded. File contents are never stored.', 'website-security-radar' ); ?></p>
+							</div>
+							<p class="description"><?php esc_html_e( 'Very large sites may require higher PHP limits or future chunked scanning.', 'website-security-radar' ); ?></p>
 						</div>
 					</div>
 					<div class="wsr-card">
@@ -393,6 +413,17 @@ class WSR_Admin_Page {
 						<p class="wsr-card-intro"><?php esc_html_e( 'Control automatic background monitoring.', 'website-security-radar' ); ?></p>
 						<div class="wsr-setting-list">
 							<?php $this->render_toggle_setting( 'enable_scheduled_scan', __( 'Enable scheduled scan', 'website-security-radar' ), __( 'Run the scanner daily using WordPress cron.', 'website-security-radar' ), $settings ); ?>
+							<div class="wsr-setting-row wsr-setting-field">
+								<label class="wsr-setting-heading" for="wsr-scheduled-scan-time"><?php esc_html_e( 'Preferred daily scan time', 'website-security-radar' ); ?></label>
+								<input id="wsr-scheduled-scan-time" type="time" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[scheduled_scan_time]" value="<?php echo esc_attr( (string) ( $settings['scheduled_scan_time'] ?? '03:00' ) ); ?>" />
+								<p class="description"><?php echo esc_html( $next_scheduled ? sprintf( __( 'Next scheduled scan: %s.', 'website-security-radar' ), WSR_Helpers::format_datetime( gmdate( 'c', $next_scheduled ) ) ) : __( 'No scheduled scan is currently registered.', 'website-security-radar' ) ); ?></p>
+							</div>
+							<?php if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) : ?>
+								<p class="description"><?php esc_html_e( 'WP-Cron is disabled. Scheduled scans require a server cron job to call wp-cron.php.', 'website-security-radar' ); ?></p>
+							<?php endif; ?>
+							<?php if ( is_multisite() ) : ?>
+								<p class="description"><?php esc_html_e( 'Multisite network dashboard is not available in this version. Scans run per site.', 'website-security-radar' ); ?></p>
+							<?php endif; ?>
 						</div>
 					</div>
 					<div class="wsr-card">
@@ -404,14 +435,14 @@ class WSR_Admin_Page {
 								<label class="wsr-setting-heading" for="wsr-vulnerability-provider"><?php esc_html_e( 'Provider', 'website-security-radar' ); ?></label>
 								<select id="wsr-vulnerability-provider" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[vulnerability_provider]">
 									<?php foreach ( WSR_Helpers::get_vulnerability_provider_options() as $provider_key => $provider_label ) : ?>
-										<option value="<?php echo esc_attr( $provider_key ); ?>" <?php selected( (string) ( $settings['vulnerability_provider'] ?? 'mock' ), $provider_key ); ?>><?php echo esc_html( $provider_label ); ?></option>
+										<option value="<?php echo esc_attr( $provider_key ); ?>" <?php selected( (string) ( $settings['vulnerability_provider'] ?? 'mock' ), $provider_key ); ?> <?php disabled( ! WSR_Helpers::is_vulnerability_provider_available( $provider_key ) ); ?>><?php echo esc_html( $provider_label ); ?></option>
 									<?php endforeach; ?>
 								</select>
 							</div>
 							<div class="wsr-setting-row wsr-setting-field">
 								<label class="wsr-setting-heading" for="wsr-vulnerability-api-key"><?php esc_html_e( 'API key', 'website-security-radar' ); ?></label>
 								<input id="wsr-vulnerability-api-key" type="text" class="regular-text" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[vulnerability_api_key]" value="<?php echo esc_attr( WSR_Helpers::mask_api_key( (string) ( $settings['vulnerability_api_key'] ?? '' ) ) ); ?>" autocomplete="off" />
-								<p class="description"><?php esc_html_e( 'Saved keys are masked after submission but stored in the WordPress options table. Restrict administrator access and database backups accordingly.', 'website-security-radar' ); ?></p>
+								<p class="description"><?php esc_html_e( 'API keys are stored in the WordPress database. Only administrators should have database access.', 'website-security-radar' ); ?></p>
 							</div>
 							<div class="wsr-setting-row wsr-setting-field">
 								<label class="wsr-setting-heading" for="wsr-vulnerability-severity"><?php esc_html_e( 'Minimum severity to show', 'website-security-radar' ); ?></label>
@@ -702,9 +733,10 @@ class WSR_Admin_Page {
 		$this->assert_capability();
 		check_admin_referer( WSR_Helpers::ADMIN_NONCE_ACTION );
 
-		$issue_id = sanitize_text_field( wp_unslash( $_GET['issue'] ?? '' ) );
+		$issue_id    = sanitize_text_field( wp_unslash( $_POST['issue_key'] ?? '' ) );
+		$issue_token = absint( wp_unslash( $_POST['issue'] ?? 0 ) );
 
-		if ( '' !== $issue_id ) {
+		if ( '' !== $issue_id && $issue_token === absint( sprintf( '%u', crc32( $issue_id ) ) ) ) {
 			WSR_Helpers::mark_result_reviewed( $issue_id );
 			$issue = $this->find_issue_by_id( $issue_id );
 			$this->plugin->add_timeline_event(
@@ -719,6 +751,22 @@ class WSR_Admin_Page {
 		}
 
 		wp_safe_redirect( WSR_Helpers::admin_url( 'website-security-radar-results', array( 'wsr_notice' => 'reviewed' ) ) );
+		exit;
+	}
+
+	public function handle_clear_scan_lock(): void {
+		$this->assert_capability();
+		check_admin_referer( WSR_Helpers::ADMIN_NONCE_ACTION );
+
+		$lock = $this->plugin->get_scan_lock();
+
+		if ( ! empty( $lock ) && $this->plugin->is_scan_lock_stale( $lock ) ) {
+			$this->plugin->clear_scan_lock();
+			wp_safe_redirect( WSR_Helpers::admin_url( 'website-security-radar', array( 'wsr_notice' => 'scan_lock_cleared' ) ) );
+			exit;
+		}
+
+		wp_safe_redirect( WSR_Helpers::admin_url( 'website-security-radar', array( 'wsr_notice' => 'scan_lock_active' ) ) );
 		exit;
 	}
 
@@ -951,6 +999,7 @@ class WSR_Admin_Page {
 
 		delete_transient( WSR_Helpers::SCAN_LOCK_TRANSIENT );
 		wp_clear_scheduled_hook( WSR_Helpers::CRON_HOOK );
+		wp_clear_scheduled_hook( WSR_Helpers::VULNERABILITY_RETRY_HOOK );
 
 		wp_safe_redirect( WSR_Helpers::admin_url( 'website-security-radar-settings', array( 'wsr_notice' => 'all_data_reset' ) ) );
 		exit;
@@ -1029,7 +1078,13 @@ class WSR_Admin_Page {
 										<a class="button button-small" href="<?php echo esc_url( $this->get_change_details_url( $issue ) ); ?>"><?php esc_html_e( 'View change details', 'website-security-radar' ); ?></a>
 									<?php endif; ?>
 									<?php if ( empty( $issue['reviewed'] ) ) : ?>
-										<a class="button button-small" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=wsr_mark_reviewed&issue=' . rawurlencode( (string) $issue['id'] ) ), WSR_Helpers::ADMIN_NONCE_ACTION ) ); ?>"><?php esc_html_e( 'Mark as reviewed', 'website-security-radar' ); ?></a>
+										<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="wsr-inline-form">
+											<?php wp_nonce_field( WSR_Helpers::ADMIN_NONCE_ACTION ); ?>
+											<input type="hidden" name="action" value="wsr_mark_reviewed" />
+											<input type="hidden" name="issue" value="<?php echo esc_attr( (string) absint( sprintf( '%u', crc32( (string) $issue['id'] ) ) ) ); ?>" />
+											<input type="hidden" name="issue_key" value="<?php echo esc_attr( (string) $issue['id'] ); ?>" />
+											<button type="submit" class="button button-small"><?php esc_html_e( 'Mark as reviewed', 'website-security-radar' ); ?></button>
+										</form>
 									<?php endif; ?>
 									<?php if ( ! empty( $issue['path'] ) ) : ?>
 										<a class="button button-small" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=wsr_rescan_path&path=' . rawurlencode( (string) $issue['path'] ) ), WSR_Helpers::ADMIN_NONCE_ACTION ) ); ?>"><?php esc_html_e( 'Rescan path', 'website-security-radar' ); ?></a>
@@ -1441,6 +1496,19 @@ class WSR_Admin_Page {
 			);
 		}
 
+		if ( 'not_available' === $status ) {
+			return array(
+				array(
+					'label' => __( 'Status', 'website-security-radar' ),
+					'value' => __( 'Provider not available yet', 'website-security-radar' ),
+				),
+				array(
+					'label' => __( 'Provider', 'website-security-radar' ),
+					'value' => (string) ( $summary['provider_label'] ?? __( 'Not configured', 'website-security-radar' ) ),
+				),
+			);
+		}
+
 		if ( 'ready' === $status ) {
 			return array(
 				array(
@@ -1679,10 +1747,6 @@ class WSR_Admin_Page {
 					<?php $this->render_change_detail_item( __( 'New modified time', 'website-security-radar' ), $this->format_file_timestamp( $details['new']['modified'] ?? 0 ) ); ?>
 					<?php $this->render_change_detail_item( __( 'Old size', 'website-security-radar' ), $this->format_file_size( $details['old']['size'] ?? null ) ); ?>
 					<?php $this->render_change_detail_item( __( 'New size', 'website-security-radar' ), $this->format_file_size( $details['new']['size'] ?? null ) ); ?>
-				</div>
-				<div class="wsr-change-diff-note">
-					<strong><?php esc_html_e( 'Content diff', 'website-security-radar' ); ?>:</strong>
-					<?php echo esc_html( ! empty( $details['content_diff']['enabled'] ) ? __( 'Available', 'website-security-radar' ) : __( 'Disabled by default. Only metadata is stored in the baseline.', 'website-security-radar' ) ); ?>
 				</div>
 			<?php else : ?>
 				<p><?php esc_html_e( 'Change details are not available for this result. Older scan results may not include baseline metadata for modified files. Run a new scan to populate these fields.', 'website-security-radar' ); ?></p>
@@ -2715,6 +2779,14 @@ class WSR_Admin_Page {
 				'message' => __( 'The ignore rule could not be saved. Check the type and value.', 'website-security-radar' ),
 				'class'   => 'notice-error',
 			),
+			'scan_lock_cleared'      => array(
+				'message' => __( 'Stale scan lock cleared.', 'website-security-radar' ),
+				'class'   => 'notice-success',
+			),
+			'scan_lock_active'       => array(
+				'message' => __( 'The scan lock is still active and was not cleared.', 'website-security-radar' ),
+				'class'   => 'notice-warning',
+			),
 		);
 
 		if ( ! isset( $messages[ $notice ] ) ) {
@@ -2736,6 +2808,7 @@ class WSR_Admin_Page {
 			WSR_Helpers::USER_ACTIVITY_OPTION,
 			WSR_Helpers::SCAN_STATUS_OPTION,
 			WSR_Helpers::VULNERABILITY_CACHE_OPTION,
+			WSR_Helpers::CRITICAL_ALERT_STATE_OPTION,
 		);
 	}
 

@@ -55,9 +55,17 @@ class WSR_File_Scanner {
 			return array();
 		}
 
-		$absolute_path = wp_normalize_path( ABSPATH . ltrim( $relative_path, '/' ) );
+		$root_path     = realpath( ABSPATH );
+		$absolute_path = realpath( ABSPATH . ltrim( $relative_path, '/' ) );
 
-		if ( ! is_file( $absolute_path ) ) {
+		if ( false === $root_path || false === $absolute_path ) {
+			return array();
+		}
+
+		$root_path     = wp_normalize_path( $root_path );
+		$absolute_path = wp_normalize_path( $absolute_path );
+
+		if ( 0 !== strpos( $absolute_path, trailingslashit( $root_path ) ) || ! is_file( $absolute_path ) ) {
 			return array();
 		}
 

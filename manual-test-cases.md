@@ -78,21 +78,27 @@ Expected:
 
 ## New feature checks
 
+Notes:
+- API keys are stored in the WordPress database. Only administrators should have database access.
+- Scheduled scans need WP-Cron or a server cron job that calls wp-cron.php.
+- Very large sites may require higher PHP limits or future chunked scanning.
+- Multisite scans run per site in this version; no network dashboard is available.
+
 1. Enable vulnerability checks with `Mock Provider`
 Expected:
 - No remote request is required
 - The dashboard shows `Ready` before the first check
 - Clicking `Run Vulnerability Check` stores a `Vulnerability Checks` status block
 
-2. Select `WPScan Vulnerability Database` without an API key
+2. Try to select `WPScan Vulnerability Database`
 Expected:
-- Dashboard status shows `Not configured`
-- Manual vulnerability check returns a handled error state without fatal errors
+- Provider option is disabled in the UI
+- If submitted manually, settings fall back to an available provider or show `Provider not available yet`
 
-3. Select `WPScan Vulnerability Database` with an invalid API key
+3. Select `Patchstack`
 Expected:
-- Manual vulnerability check returns a handled WPScan authentication error
-- Existing non-vulnerability findings remain visible
+- Provider option is disabled in the UI
+- No remote request is sent
 
 4. Register a cron event with a suspicious hook like `hidden_mailer_eval`
 Expected:

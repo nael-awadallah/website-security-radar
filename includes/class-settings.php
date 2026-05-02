@@ -38,6 +38,8 @@ class WSR_Settings {
 		$output['scan_root_files']       = ! empty( $input['scan_root_files'] ) ? 1 : 0;
 		$output['scan_batch_size']       = min( 2000, max( 100, absint( $input['scan_batch_size'] ?? $defaults['scan_batch_size'] ) ) );
 		$output['timeline_event_limit']  = min( WSR_Helpers::TIMELINE_DEFAULT_LIMIT, max( 50, absint( $input['timeline_event_limit'] ?? $defaults['timeline_event_limit'] ) ) );
+		$output['scheduled_scan_time']   = $this->sanitize_scan_time( (string) ( $input['scheduled_scan_time'] ?? $defaults['scheduled_scan_time'] ) );
+		$output['max_baselines']         = min( 50, max( 1, absint( $input['max_baselines'] ?? $defaults['max_baselines'] ) ) );
 		$output['enable_vulnerability_checks'] = ! empty( $input['enable_vulnerability_checks'] ) ? 1 : 0;
 		$output['vulnerability_provider']      = sanitize_key( (string) ( $input['vulnerability_provider'] ?? $defaults['vulnerability_provider'] ) );
 		$output['vulnerability_min_severity']  = WSR_Helpers::sanitize_severity( (string) ( $input['vulnerability_min_severity'] ?? $defaults['vulnerability_min_severity'] ) );
@@ -46,6 +48,10 @@ class WSR_Settings {
 		$output['report_footer_text']          = sanitize_textarea_field( (string) ( $input['report_footer_text'] ?? $defaults['report_footer_text'] ) );
 
 		if ( ! array_key_exists( $output['vulnerability_provider'], WSR_Helpers::get_vulnerability_provider_options() ) ) {
+			$output['vulnerability_provider'] = $defaults['vulnerability_provider'];
+		}
+
+		if ( ! WSR_Helpers::is_vulnerability_provider_available( $output['vulnerability_provider'] ) ) {
 			$output['vulnerability_provider'] = $defaults['vulnerability_provider'];
 		}
 
@@ -61,5 +67,13 @@ class WSR_Settings {
 		}
 
 		return $output;
+	}
+
+	private function sanitize_scan_time( string $time ): string {
+		if ( preg_match( '/^([01]\d|2[0-3]):([0-5]\d)$/', $time ) ) {
+			return $time;
+		}
+
+		return '03:00';
 	}
 }

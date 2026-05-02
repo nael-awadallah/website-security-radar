@@ -1031,6 +1031,11 @@
 	animation: wsr-spin 0.65s linear infinite;
 }
 
+.wsr-inline-form {
+	display: inline-block;
+	margin: 0;
+}
+
 .wsr-action-stack {
 	display: grid;
 	gap: 14px;

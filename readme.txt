@@ -117,6 +117,14 @@ No. Vulnerability checks are disabled unless enabled.
 
 Only the WordPress core version plus installed plugin and theme slugs and versions are sent to the selected provider. File contents, user data, database data, and absolute server paths are never sent.
 
+API keys are stored in the WordPress database. Only administrators should have database access.
+
+Very large sites may require higher PHP limits or future chunked scanning.
+
+Multisite network dashboard is not available in this version. Scans run per site.
+
+Scheduled scans require WP-Cron, or a server cron job that calls wp-cron.php when WP-Cron is disabled.
+
 = Does it scan large files? =
 
 Files larger than the configured size limit are skipped for content scanning to maintain performance.

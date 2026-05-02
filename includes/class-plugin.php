@@ -72,6 +72,7 @@ class WSR_Plugin {
 
 	public static function deactivate(): void {
 		self::get_instance()->cron->clear_schedule();
+		wp_clear_scheduled_hook( WSR_Helpers::VULNERABILITY_RETRY_HOOK );
 	}
 
 	public function get_latest_results(): array {
@@ -105,11 +106,36 @@ class WSR_Plugin {
 	}
 
 	public function run_scan( bool $persist = true, string $scan_type = 'manual', bool $refresh_vulnerabilities = false ): array {
-		if ( get_transient( WSR_Helpers::SCAN_LOCK_TRANSIENT ) ) {
-			throw new RuntimeException( __( 'A scan is already running. Try again after it completes.', 'website-security-radar' ) );
+		if ( function_exists( 'set_time_limit' ) ) {
+			@set_time_limit( 0 );
 		}
 
-		set_transient( WSR_Helpers::SCAN_LOCK_TRANSIENT, time(), 30 * MINUTE_IN_SECONDS );
+		$existing_lock = $this->get_scan_lock();
+
+		if ( ! empty( $existing_lock ) && ! $this->is_scan_lock_stale( $existing_lock ) ) {
+			throw new RuntimeException(
+				sprintf(
+					/* translators: %s: scan start time. */
+					__( 'A scan appears to be in progress since %s.', 'website-security-radar' ),
+					WSR_Helpers::format_datetime( (string) ( $existing_lock['started_at'] ?? '' ) )
+				)
+			);
+		}
+
+		if ( ! empty( $existing_lock ) ) {
+			delete_transient( WSR_Helpers::SCAN_LOCK_TRANSIENT );
+		}
+
+		$started_at = gmdate( 'c' );
+		set_transient(
+			WSR_Helpers::SCAN_LOCK_TRANSIENT,
+			array(
+				'started_at' => $started_at,
+				'started_by' => get_current_user_id(),
+				'scan_type'  => sanitize_key( $scan_type ),
+			),
+			WSR_Helpers::SCAN_LOCK_TTL
+		);
 		update_option(
 			WSR_Helpers::SCAN_STATUS_OPTION,
 			array(
@@ -118,6 +144,9 @@ class WSR_Plugin {
 				'processed_files' => 0,
 				'current_path'    => '',
 				'updated_at'      => gmdate( 'c' ),
+				'started_at'      => $started_at,
+				'started_by'      => get_current_user_id(),
+				'scan_type'       => sanitize_key( $scan_type ),
 			),
 			false
 		);
@@ -185,6 +214,8 @@ class WSR_Plugin {
 				'processed_files' => count( $inventory ),
 				'current_path'    => '',
 				'updated_at'      => gmdate( 'c' ),
+				'started_at'      => $started_at,
+				'duration'        => time() - strtotime( $started_at ),
 			),
 			false
 		);
@@ -214,16 +245,11 @@ class WSR_Plugin {
 		$scanner     = new WSR_File_Scanner( $settings, $ignore_list );
 		$inventory   = $scanner->scan_path( $path );
 
-		if ( empty( $inventory ) ) {
-			return $this->get_latest_results();
-		}
-
-		$baseline = $this->filter_baseline_by_ignore_rules( $this->baseline->compare( $inventory ), $ignore_list );
-		$baseline['deleted'] = array();
+		$path     = WSR_Helpers::normalize_relative_path( $path );
+		$baseline = $this->filter_baseline_by_ignore_rules( $this->baseline->compare_path( $path, $inventory ), $ignore_list );
 		$issues   = $this->build_change_issues( $baseline );
 		$issues   = array_merge( $issues, ( new WSR_Malware_Scanner( $settings, $ignore_list, $baseline ) )->scan( $inventory ) );
 		$results  = $this->get_latest_results();
-		$path     = WSR_Helpers::normalize_relative_path( $path );
 		$current  = array_values(
 			array_filter(
 				$results['issues'] ?? array(),
@@ -235,16 +261,22 @@ class WSR_Plugin {
 		$issues   = WSR_Helpers::apply_review_status( array_merge( $current, $issues ) );
 		$severity = WSR_Helpers::count_severity( $issues );
 		$score_breakdown = WSR_Helpers::calculate_security_score_breakdown( $issues );
+		$merged_baseline = $this->merge_path_baseline_comparison(
+			is_array( $results['baseline'] ?? null ) ? $results['baseline'] : array(),
+			$baseline,
+			$path
+		);
 
 		$results['issues']          = $issues;
 		$results['severity_counts'] = $severity;
 		$results['score_breakdown'] = $score_breakdown;
 		$results['score']           = (int) ( $score_breakdown['score'] ?? 100 );
 		$results['risk_level']      = WSR_Helpers::get_risk_level( (int) $results['score'] );
+		$results['baseline']        = $merged_baseline;
 		$results                    = $this->build_results(
 			$results,
 			(int) ( $results['inventory_count'] ?? 0 ),
-			is_array( $results['baseline'] ?? null ) ? $results['baseline'] : array(),
+			$merged_baseline,
 			$issues,
 			(int) ( $results['summary']['ignored_findings'] ?? 0 )
 		);
@@ -264,10 +296,10 @@ class WSR_Plugin {
 		return $results;
 	}
 
-	public function run_vulnerability_check( bool $persist = true ): array {
+	public function run_vulnerability_check( bool $persist = true, int $retry_attempt = 0 ): array {
 		$settings            = WSR_Helpers::get_settings();
 		$latest_results      = $this->get_latest_results();
-		$vulnerability_data  = $this->vulnerability_service->run_check( $settings );
+		$vulnerability_data  = $this->vulnerability_service->run_check( $settings, $retry_attempt );
 		$non_vuln_issues     = array_values(
 			array_filter(
 				$latest_results['issues'] ?? array(),
@@ -357,7 +389,7 @@ class WSR_Plugin {
 		} catch ( Throwable $exception ) {
 			wp_send_json_error(
 				array(
-					'message' => __( 'The scan could not be completed. Check PHP error logs for details.', 'website-security-radar' ),
+					'message' => $exception instanceof RuntimeException ? sanitize_text_field( $exception->getMessage() ) : __( 'The scan could not be completed. Check PHP error logs for details.', 'website-security-radar' ),
 				),
 				500
 			);
@@ -425,6 +457,38 @@ class WSR_Plugin {
 
 	public function add_timeline_event( array $event ): void {
 		$this->timeline->add_event( $event );
+	}
+
+	public function get_scan_lock(): array {
+		$lock = get_transient( WSR_Helpers::SCAN_LOCK_TRANSIENT );
+
+		if ( is_array( $lock ) ) {
+			return $lock;
+		}
+
+		if ( is_numeric( $lock ) ) {
+			return array(
+				'started_at' => gmdate( 'c', (int) $lock ),
+				'started_by' => 0,
+				'scan_type'  => '',
+			);
+		}
+
+		return array();
+	}
+
+	public function clear_scan_lock(): void {
+		delete_transient( WSR_Helpers::SCAN_LOCK_TRANSIENT );
+	}
+
+	public function is_scan_lock_stale( array $lock ): bool {
+		$started = strtotime( (string) ( $lock['started_at'] ?? '' ) );
+
+		if ( ! $started ) {
+			return true;
+		}
+
+		return ( time() - $started ) > WSR_Helpers::SCAN_LOCK_TTL;
 	}
 
 	public function get_report(): WSR_Report {
@@ -538,6 +602,44 @@ class WSR_Plugin {
 		}
 
 		return $baseline;
+	}
+
+	private function merge_path_baseline_comparison( array $existing, array $scoped, string $path ): array {
+		$path = WSR_Helpers::normalize_relative_path( $path );
+
+		foreach ( array( 'new_files', 'modified', 'deleted' ) as $key ) {
+			$existing[ $key ] = array_values(
+				array_filter(
+					is_array( $existing[ $key ] ?? null ) ? $existing[ $key ] : array(),
+					static function ( string $candidate ) use ( $path ): bool {
+						return WSR_Helpers::normalize_relative_path( $candidate ) !== $path;
+					}
+				)
+			);
+
+			foreach ( is_array( $scoped[ $key ] ?? null ) ? $scoped[ $key ] : array() as $candidate ) {
+				if ( WSR_Helpers::normalize_relative_path( (string) $candidate ) === $path ) {
+					$existing[ $key ][] = $path;
+				}
+			}
+
+			$existing[ $key ] = array_values( array_unique( $existing[ $key ] ) );
+		}
+
+		$existing['modified_details'] = is_array( $existing['modified_details'] ?? null ) ? $existing['modified_details'] : array();
+		unset( $existing['modified_details'][ $path ] );
+
+		if ( ! empty( $scoped['modified_details'][ $path ] ) && is_array( $scoped['modified_details'][ $path ] ) ) {
+			$existing['modified_details'][ $path ] = $scoped['modified_details'][ $path ];
+		}
+
+		foreach ( array( 'has_baseline', 'baseline_id', 'label', 'created_at', 'created_by_user_id', 'file_count', 'hash_summary', 'metadata' ) as $key ) {
+			if ( array_key_exists( $key, $scoped ) ) {
+				$existing[ $key ] = $scoped[ $key ];
+			}
+		}
+
+		return $existing;
 	}
 
 	private function record_scan_timeline_events( array $results, string $scan_type ): void {

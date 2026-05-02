@@ -107,6 +107,7 @@ class WSR_Baseline {
 		$store['version']                 = self::STORE_VERSION;
 		$store['active_id']               = $baseline['id'];
 		$store['baselines'][ $baseline['id'] ] = $baseline;
+		$store                            = $this->enforce_baseline_limit( $store );
 
 		update_option( WSR_Helpers::BASELINE_OPTION, $store, false );
 
@@ -210,12 +211,67 @@ class WSR_Baseline {
 		);
 	}
 
+	public function compare_path( string $path, array $inventory ): array {
+		$path       = WSR_Helpers::normalize_relative_path( $path );
+		$comparison = $this->compare( $inventory );
+
+		if ( '' === $path ) {
+			return $comparison;
+		}
+
+		$comparison['new_files'] = array_values(
+			array_filter(
+				$comparison['new_files'],
+				static function ( string $candidate ) use ( $path ): bool {
+					return WSR_Helpers::normalize_relative_path( $candidate ) === $path;
+				}
+			)
+		);
+		$comparison['modified'] = array_values(
+			array_filter(
+				$comparison['modified'],
+				static function ( string $candidate ) use ( $path ): bool {
+					return WSR_Helpers::normalize_relative_path( $candidate ) === $path;
+				}
+			)
+		);
+		$comparison['modified_details'] = array_intersect_key( $comparison['modified_details'], array_flip( $comparison['modified'] ) );
+
+		if ( empty( $inventory ) ) {
+			$active_files = $this->get_active()['files'] ?? array();
+			$comparison['deleted'] = isset( $active_files[ $path ] ) ? array( $path ) : array();
+		} else {
+			$comparison['deleted'] = array_values(
+				array_filter(
+					$comparison['deleted'],
+					static function ( string $candidate ) use ( $path ): bool {
+						return WSR_Helpers::normalize_relative_path( $candidate ) === $path;
+					}
+				)
+			);
+		}
+
+		return $comparison;
+	}
+
 	private function get_store(): array {
 		$store = $this->migrate();
 
 		if ( ! $this->is_store_format( $store ) ) {
 			return $this->empty_store();
 		}
+
+		$version = isset( $store['version'] ) ? absint( $store['version'] ) : 1;
+
+		if ( $version > self::STORE_VERSION || $version < 1 ) {
+			if ( function_exists( 'error_log' ) ) {
+				error_log( 'Website Security Radar baseline store version is unsupported.' );
+			}
+
+			return $this->empty_store();
+		}
+
+		$store['version'] = self::STORE_VERSION;
 
 		if ( empty( $store['active_id'] ) && ! empty( $store['baselines'] ) ) {
 			$store['active_id'] = $this->get_latest_baseline_id( $store['baselines'] );
@@ -265,6 +321,39 @@ class WSR_Baseline {
 			'active_id' => '',
 			'baselines' => array(),
 		);
+	}
+
+	private function enforce_baseline_limit( array $store ): array {
+		$settings = WSR_Helpers::get_settings();
+		$limit    = min( 50, max( 1, absint( $settings['max_baselines'] ?? 10 ) ) );
+
+		if ( count( $store['baselines'] ?? array() ) <= $limit ) {
+			return $store;
+		}
+
+		$baselines = array_values( $store['baselines'] );
+		usort(
+			$baselines,
+			static function ( array $left, array $right ): int {
+				return strcmp( (string) ( $left['created_at'] ?? '' ), (string) ( $right['created_at'] ?? '' ) );
+			}
+		);
+
+		foreach ( $baselines as $baseline ) {
+			if ( count( $store['baselines'] ) <= $limit ) {
+				break;
+			}
+
+			$id = sanitize_key( (string) ( $baseline['id'] ?? '' ) );
+
+			if ( '' === $id || $id === ( $store['active_id'] ?? '' ) ) {
+				continue;
+			}
+
+			unset( $store['baselines'][ $id ] );
+		}
+
+		return $store;
 	}
 
 	private function sanitize_label( string $label ): string {
