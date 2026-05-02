@@ -125,20 +125,13 @@ Files larger than the configured size limit are skipped for content scanning to 
 
 No. The plugin does not modify files or configurations automatically.
 
-== Screenshots ==
-
-1. Dashboard with security score and overview.
-2. Scan results table with severity levels and actions.
-3. Settings page with scan configuration.
-4. Ignore list and workflow management.
-
 == Changelog ==
-
-= 1.0.0 =
-* Initial release with file scanning, baseline comparison, malware detection, hardening checks, scheduled scans, alerts, and dashboard UI.
-* Added hidden backdoor heuristics for suspicious filenames, uploads PHP, disguised image shells, recent root PHP changes, and small obfuscated droppers.
 
 = 1.1.0 =
 * Added optional vulnerability check integration with explicit opt-in, provider selection, privacy notice, masked API key display, and manual AJAX trigger.
 * Added cron hook review checks and suspicious administrator activity monitoring.
 * Added a print-friendly client security report export with white-label settings.
+
+= 1.0.0 =
+* Initial release with file scanning, baseline comparison, malware detection, hardening checks, scheduled scans, alerts, and dashboard UI.
+* Added hidden backdoor heuristics for suspicious filenames, uploads PHP, disguised image shells, recent root PHP changes, and small obfuscated droppers.

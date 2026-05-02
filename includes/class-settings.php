@@ -22,8 +22,8 @@ class WSR_Settings {
 		);
 	}
 
-	public function sanitize( array $input ): array {
-		$input    = wp_unslash( $input );
+	public function sanitize( $input ): array {
+		$input    = is_array( $input ) ? wp_unslash( $input ) : array();
 		$defaults = WSR_Helpers::get_default_settings();
 		$current  = WSR_Helpers::get_settings();
 		$output   = array();

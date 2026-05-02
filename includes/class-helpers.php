@@ -168,9 +168,9 @@ class WSR_Helpers {
 
 	public static function get_vulnerability_provider_options(): array {
 		return array(
-			'mock'       => __( 'Mock Provider', 'website-security-radar' ),
-			'wpscan'     => __( 'WPScan Placeholder', 'website-security-radar' ),
-			'patchstack' => __( 'Patchstack Placeholder', 'website-security-radar' ),
+			'mock'       => __( 'Mock Provider (Testing Only)', 'website-security-radar' ),
+			'wpscan'     => __( 'WPScan (Coming Soon)', 'website-security-radar' ),
+			'patchstack' => __( 'Patchstack (Coming Soon)', 'website-security-radar' ),
 		);
 	}
 
