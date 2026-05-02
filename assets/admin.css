@@ -359,6 +359,20 @@
 	line-height: 1;
 }
 
+.wsr-score-ring-zero {
+	background:
+		radial-gradient(circle at center, #ffffff 56%, transparent 57%),
+		conic-gradient(rgba(226, 232, 240, 0.95) 360deg, rgba(226, 232, 240, 0.95) 0deg);
+	box-shadow:
+		inset 0 0 0 1px rgba(255, 255, 255, 0.55),
+		0 16px 34px rgba(15, 23, 42, 0.06);
+}
+
+.wsr-score-ring-zero span,
+.wsr-score-ring-zero small {
+	color: #64748b;
+}
+
 .wsr-risk-safe {
 	--wsr-accent: #22c55e;
 }

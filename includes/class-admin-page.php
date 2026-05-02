@@ -59,8 +59,13 @@ class WSR_Admin_Page {
 			return;
 		}
 
-		wp_enqueue_style( 'wsr-admin', WSR_PLUGIN_URL . 'assets/admin.css', array(), WSR_PLUGIN_VERSION );
-		wp_enqueue_script( 'wsr-admin', WSR_PLUGIN_URL . 'assets/admin.js', array( 'jquery' ), WSR_PLUGIN_VERSION, true );
+		$style_path    = WSR_PLUGIN_DIR . 'assets/admin.css';
+		$script_path   = WSR_PLUGIN_DIR . 'assets/admin.js';
+		$style_version = file_exists( $style_path ) ? (string) filemtime( $style_path ) : WSR_PLUGIN_VERSION;
+		$script_version = file_exists( $script_path ) ? (string) filemtime( $script_path ) : WSR_PLUGIN_VERSION;
+
+		wp_enqueue_style( 'wsr-admin', WSR_PLUGIN_URL . 'assets/admin.css', array(), $style_version );
+		wp_enqueue_script( 'wsr-admin', WSR_PLUGIN_URL . 'assets/admin.js', array( 'jquery' ), $script_version, true );
 
 		wp_localize_script(
 			'wsr-admin',
@@ -132,7 +137,7 @@ class WSR_Admin_Page {
 							<?php endif; ?>
 						</div>
 						<div class="wsr-score-visual">
-							<div class="wsr-score-ring wsr-risk-<?php echo esc_attr( $risk_level ); ?>" style="--wsr-score: <?php echo esc_attr( (string) $score_display ); ?>; --wsr-score-angle: <?php echo esc_attr( (string) ( $score_display * 3.6 ) ); ?>deg;">
+							<div class="wsr-score-ring wsr-risk-<?php echo esc_attr( $risk_level ); ?><?php echo 0 === $score_display ? ' wsr-score-ring-zero' : ''; ?>" style="--wsr-score: <?php echo esc_attr( (string) $score_display ); ?>; --wsr-score-angle: <?php echo esc_attr( (string) ( $score_display * 3.6 ) ); ?>deg;" aria-label="<?php echo esc_attr( sprintf( __( 'Security score: %d out of 100', 'website-security-radar' ), $score_display ) ); ?>">
 								<span><?php echo esc_html( (string) $score_display ); ?></span>
 								<small>/100</small>
 							</div>
