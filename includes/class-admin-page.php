@@ -72,6 +72,8 @@ class WSR_Admin_Page {
 				'strings'        => array(
 					'scanning'   => __( 'Running scan...', 'website-security-radar' ),
 					'baselining' => __( 'Creating baseline...', 'website-security-radar' ),
+					'showDetails'=> __( 'Details', 'website-security-radar' ),
+					'hideDetails'=> __( 'Hide details', 'website-security-radar' ),
 					'success'    => __( 'Action completed.', 'website-security-radar' ),
 					'error'      => __( 'Request failed.', 'website-security-radar' ),
 				),

@@ -63,6 +63,9 @@ jQuery(function ($) {
 		const ajaxAction = isScan ? wsrAdmin.scanAction : wsrAdmin.baselineAction;
 		const loadingText = isScan ? wsrAdmin.strings.scanning : wsrAdmin.strings.baselining;
 		const originalText = $button.text();
+		const $actionsCard = $button.closest('[data-wsr-actions-card]');
+		const $actionButtons = $actionsCard.find('.wsr-ajax-button');
+		const $actionInputs = $actionsCard.find('input, button');
 		const requestData = {
 			action: ajaxAction,
 			nonce: wsrAdmin.nonce
@@ -72,7 +75,13 @@ jQuery(function ($) {
 			requestData.label = $('#wsr-baseline-label').val() || '';
 		}
 
-		$button.addClass('wsr-loading').prop('disabled', true).text(loadingText);
+		$actionsCard.addClass('wsr-loading');
+		$actionInputs.prop('disabled', true);
+		$actionButtons.each(function () {
+			const $currentButton = $(this);
+			$currentButton.data('wsr-original-text', $currentButton.text());
+		});
+		$button.addClass('wsr-loading').text(loadingText);
 
 		$.post(wsrAdmin.ajaxUrl, requestData).done(function (response) {
 			if (response && response.success) {
@@ -85,13 +94,39 @@ jQuery(function ($) {
 		}).fail(function () {
 			window.alert(wsrAdmin.strings.error);
 		}).always(function () {
-			$button.removeClass('wsr-loading').prop('disabled', false).text(originalText);
+			$actionsCard.removeClass('wsr-loading');
+			$actionInputs.prop('disabled', false);
+			$actionButtons.each(function () {
+				const $currentButton = $(this);
+				const currentOriginalText = $currentButton.data('wsr-original-text');
+				if (currentOriginalText) {
+					$currentButton.text(currentOriginalText);
+				}
+				$currentButton.removeClass('wsr-loading').removeData('wsr-original-text');
+			});
+			$button.text(originalText);
 		});
 	}
 
 	$(document).on('click', '.wsr-ajax-button', function () {
 		const $button = $(this);
 		runAction($button.data('wsr-action'), $button);
+	});
+
+	$(document).on('click', '.wsr-issue-toggle', function () {
+		const $button = $(this);
+		const targetId = $button.attr('data-wsr-toggle-target');
+		const $target = $('#' + targetId);
+
+		if (!$target.length) {
+			return;
+		}
+
+		const isExpanded = $button.attr('aria-expanded') === 'true';
+
+		$button.attr('aria-expanded', isExpanded ? 'false' : 'true');
+		$button.text(isExpanded ? wsrAdmin.strings.showDetails : wsrAdmin.strings.hideDetails);
+		$target.prop('hidden', isExpanded);
 	});
 
 	$(document).on('submit', '#wsr-filter-form', function (event) {
