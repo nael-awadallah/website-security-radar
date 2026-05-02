@@ -113,15 +113,15 @@ class WSR_Helpers {
 
 	public static function get_type_label( string $type ): string {
 		$map = array(
-			'malware'            => 'Malware',
-			'suspicious pattern' => 'Suspicious Pattern',
-			'potential risk'     => 'Potential Risk',
-			'hardening'          => 'Hardening',
-			'file change'        => 'File Change',
-			'uploads issue'      => 'Uploads Issue',
-			'updates'            => 'Updates',
-			'permissions'        => 'Permissions',
-			'exposure'           => 'Exposure',
+			'malware'            => __( 'Malware', 'website-security-radar' ),
+			'suspicious pattern' => __( 'Suspicious Pattern', 'website-security-radar' ),
+			'potential risk'     => __( 'Potential Risk', 'website-security-radar' ),
+			'hardening'          => __( 'Hardening', 'website-security-radar' ),
+			'file change'        => __( 'File Change', 'website-security-radar' ),
+			'uploads issue'      => __( 'Uploads Issue', 'website-security-radar' ),
+			'updates'            => __( 'Updates', 'website-security-radar' ),
+			'permissions'        => __( 'Permissions', 'website-security-radar' ),
+			'exposure'           => __( 'Exposure', 'website-security-radar' ),
 		);
 
 		$normalized = strtolower( trim( $type ) );

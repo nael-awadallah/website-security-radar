@@ -23,15 +23,19 @@ class WSR_Notifier {
 		}
 
 		$high_count = (int) ( $severity_counts['high'] ?? 0 );
-		$subject    = sprintf( '[%s] Security Radar alert', wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) );
+		$subject    = sprintf(
+			/* translators: %s: site name. */
+			__( '[%s] Security Radar alert', 'website-security-radar' ),
+			wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES )
+		);
 		$body       = implode(
 			"\n",
 			array(
-				sprintf( 'Website: %s', wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) ),
-				sprintf( 'Security score: %d', (int) ( $results['score'] ?? 0 ) ),
-				sprintf( 'Critical issues: %d', $critical_count ),
-				sprintf( 'High issues: %d', $high_count ),
-				sprintf( 'Dashboard: %s', WSR_Helpers::admin_url( 'website-security-radar' ) ),
+				sprintf( __( 'Website: %s', 'website-security-radar' ), wp_specialchars_decode( get_bloginfo( 'name' ), ENT_QUOTES ) ),
+				sprintf( __( 'Security score: %d', 'website-security-radar' ), (int) ( $results['score'] ?? 0 ) ),
+				sprintf( __( 'Critical issues: %d', 'website-security-radar' ), $critical_count ),
+				sprintf( __( 'High issues: %d', 'website-security-radar' ), $high_count ),
+				sprintf( __( 'Dashboard: %s', 'website-security-radar' ), WSR_Helpers::admin_url( 'website-security-radar' ) ),
 			)
 		);
 

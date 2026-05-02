@@ -257,7 +257,7 @@ class WSR_Admin_Page {
 							<p><strong><?php esc_html_e( 'Confidence:', 'website-security-radar' ); ?></strong> <?php echo esc_html( ucfirst( (string) $detail_issue['confidence'] ) ); ?></p>
 						<?php endif; ?>
 						<p><strong><?php esc_html_e( 'Issue:', 'website-security-radar' ); ?></strong> <?php echo esc_html( $detail_issue['issue'] ); ?></p>
-						<p><strong><?php esc_html_e( 'Path:', 'website-security-radar' ); ?></strong> <?php echo esc_html( (string) ( $detail_issue['path'] ?? $detail_issue['file'] ?? '' ) ); ?></p>
+						<p><strong><?php esc_html_e( 'Path:', 'website-security-radar' ); ?></strong> <?php echo esc_html( WSR_Helpers::get_safe_display_path( (string) ( $detail_issue['path'] ?? $detail_issue['file'] ?? '' ) ) ); ?></p>
 						<p><strong><?php esc_html_e( 'Explanation:', 'website-security-radar' ); ?></strong> <?php echo esc_html( $detail_issue['explanation'] ); ?></p>
 						<?php if ( ! empty( $detail_issue['recommended_action'] ) ) : ?>
 							<p><strong><?php esc_html_e( 'Recommended action:', 'website-security-radar' ); ?></strong> <?php echo esc_html( (string) $detail_issue['recommended_action'] ); ?></p>
@@ -660,7 +660,7 @@ class WSR_Admin_Page {
 		$this->assert_capability();
 		check_admin_referer( WSR_Helpers::ADMIN_NONCE_ACTION );
 
-		$path = sanitize_text_field( wp_unslash( $_GET['path'] ?? '' ) );
+		$path = WSR_Helpers::normalize_relative_path( sanitize_text_field( wp_unslash( $_GET['path'] ?? '' ) ) );
 
 		if ( '' !== $path ) {
 			if ( WSR_Helpers::rule_requires_uploads_php_confirmation( array( 'type' => 'exact_path', 'value' => $path ) ) ) {
@@ -822,7 +822,7 @@ class WSR_Admin_Page {
 							<td><span class="wsr-type-pill"><?php echo esc_html( WSR_Helpers::get_type_label( (string) ( $issue['type'] ?? '' ) ) ); ?></span></td>
 							<td><span class="<?php echo esc_attr( WSR_Helpers::severity_label_class( (string) $issue['severity'] ) ); ?>"><?php echo esc_html( ucfirst( (string) $issue['severity'] ) ); ?></span><?php if ( ! empty( $issue['confidence'] ) ) : ?><span class="wsr-confidence"><?php echo esc_html( ucfirst( (string) $issue['confidence'] ) ); ?></span><?php endif; ?></td>
 							<td>
-								<?php $display_path = (string) ( $issue['path'] ?? $issue['file'] ?? '' ); ?>
+								<?php $display_path = WSR_Helpers::get_safe_display_path( (string) ( $issue['path'] ?? $issue['file'] ?? '' ) ); ?>
 								<code class="wsr-path" title="<?php echo esc_attr( $display_path ); ?>"><?php echo esc_html( $display_path ); ?></code>
 							</td>
 							<td><?php echo esc_html( (string) $issue['issue'] ); ?></td>
@@ -1475,7 +1475,7 @@ class WSR_Admin_Page {
 							<td><?php echo esc_html( (string) $event['message'] ); ?></td>
 							<td>
 								<?php if ( ! empty( $event['relative_path'] ) ) : ?>
-									<code class="wsr-path"><?php echo esc_html( (string) $event['relative_path'] ); ?></code>
+									<code class="wsr-path"><?php echo esc_html( WSR_Helpers::get_safe_display_path( (string) $event['relative_path'] ) ); ?></code>
 								<?php else : ?>
 									<?php esc_html_e( 'N/A', 'website-security-radar' ); ?>
 								<?php endif; ?>

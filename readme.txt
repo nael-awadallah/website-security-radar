@@ -95,6 +95,14 @@ No. This plugin is designed for detection and analysis only.
 
 No. All scanning is performed locally within your WordPress installation.
 
+= Does this plugin collect data or track users? =
+
+No. The plugin does not track users, does not phone home, and does not send file contents or user data to external services.
+
+= Are remote checks enabled by default? =
+
+No remote or vulnerability lookup feature is enabled by default in this release.
+
 = Does it scan large files? =
 
 Files larger than the configured size limit are skipped for content scanning to maintain performance.

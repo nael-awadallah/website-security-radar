@@ -197,37 +197,56 @@ class WSR_Plugin {
 
 	public function handle_manual_scan_ajax(): void {
 		$this->assert_ajax_access();
-		$this->timeline->add_event(
-			array(
-				'type'          => 'manual_scan_started',
-				'severity'      => 'info',
-				'message'       => __( 'Manual scan started.', 'website-security-radar' ),
-				'actor_user_id' => get_current_user_id(),
-			)
-		);
-		$results = $this->run_scan( true );
-		wp_send_json_success(
-			array(
-				'message' => __( 'Manual scan completed.', 'website-security-radar' ),
-				'results' => $results,
-			)
-		);
+		try {
+			$this->timeline->add_event(
+				array(
+					'type'          => 'manual_scan_started',
+					'severity'      => 'info',
+					'message'       => __( 'Manual scan started.', 'website-security-radar' ),
+					'actor_user_id' => get_current_user_id(),
+				)
+			);
+			$results = $this->run_scan( true );
+			wp_send_json_success(
+				array(
+					'message' => __( 'Manual scan completed.', 'website-security-radar' ),
+					'results' => $results,
+				)
+			);
+		} catch ( Throwable $exception ) {
+			wp_send_json_error(
+				array(
+					'message' => __( 'The scan could not be completed. Check PHP error logs for details.', 'website-security-radar' ),
+				),
+				500
+			);
+		}
 	}
 
 	public function handle_create_baseline_ajax(): void {
 		$this->assert_ajax_access();
-		$label    = sanitize_text_field( wp_unslash( $_POST['label'] ?? '' ) );
-		$baseline = $this->create_baseline( $label );
-		wp_send_json_success(
-			array(
-				'message'  => sprintf(
-					/* translators: %s: baseline label. */
-					__( 'Baseline "%s" created.', 'website-security-radar' ),
-					$baseline['label']
+		$label = sanitize_text_field( wp_unslash( $_POST['label'] ?? '' ) );
+
+		try {
+			$baseline = $this->create_baseline( $label );
+			wp_send_json_success(
+				array(
+					'message'  => sprintf(
+						/* translators: %s: baseline label. */
+						__( 'Baseline "%s" created.', 'website-security-radar' ),
+						$baseline['label']
+					),
+					'baseline' => $baseline,
+				)
+			);
+		} catch ( Throwable $exception ) {
+			wp_send_json_error(
+				array(
+					'message' => __( 'The baseline could not be created. Check PHP error logs for details.', 'website-security-radar' ),
 				),
-				'baseline' => $baseline,
-			)
-		);
+				500
+			);
+		}
 	}
 
 	public function handle_settings_updated( $old_value, $value ): void {
@@ -278,15 +297,15 @@ class WSR_Plugin {
 		}
 
 		foreach ( $baseline['new_files'] as $path ) {
-			$issues[] = $this->change_issue( 'medium', $path, 'New file detected', 'This file does not exist in the saved baseline.' );
+			$issues[] = $this->change_issue( 'medium', $path, __( 'New file detected', 'website-security-radar' ), __( 'This file does not exist in the saved baseline.', 'website-security-radar' ) );
 		}
 
 		foreach ( $baseline['modified'] as $path ) {
 			$issues[] = $this->change_issue(
 				'high',
 				$path,
-				'Modified file detected',
-				'This file differs from the saved baseline metadata or hash.',
+				__( 'Modified file detected', 'website-security-radar' ),
+				__( 'This file differs from the saved baseline metadata or hash.', 'website-security-radar' ),
 				array(
 					'change_details' => $baseline['modified_details'][ $path ] ?? array(),
 				)
@@ -294,7 +313,7 @@ class WSR_Plugin {
 		}
 
 		foreach ( $baseline['deleted'] as $path ) {
-			$issues[] = $this->change_issue( 'medium', $path, 'Deleted file detected', 'This file existed in the baseline but was not found in the current scan.' );
+			$issues[] = $this->change_issue( 'medium', $path, __( 'Deleted file detected', 'website-security-radar' ), __( 'This file existed in the baseline but was not found in the current scan.', 'website-security-radar' ) );
 		}
 
 		return $issues;

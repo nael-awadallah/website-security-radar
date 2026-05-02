@@ -14,11 +14,16 @@ class WSR_Settings {
 		register_setting(
 			'wsr_settings_group',
 			WSR_Helpers::SETTINGS_OPTION,
-			array( $this, 'sanitize' )
+			array(
+				'type'              => 'array',
+				'sanitize_callback' => array( $this, 'sanitize' ),
+				'show_in_rest'      => false,
+			)
 		);
 	}
 
 	public function sanitize( array $input ): array {
+		$input    = wp_unslash( $input );
 		$defaults = WSR_Helpers::get_default_settings();
 		$output   = array();
 
