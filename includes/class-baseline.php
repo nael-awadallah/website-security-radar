@@ -20,7 +20,10 @@ class WSR_Baseline {
 		}
 
 		$migrated = $this->migrate_legacy_store( $store );
-		update_option( WSR_Helpers::BASELINE_OPTION, $migrated, false );
+
+		if ( ! empty( $migrated['baselines'] ) ) {
+			update_option( WSR_Helpers::BASELINE_OPTION, $migrated, false );
+		}
 
 		return $migrated;
 	}
@@ -182,6 +185,10 @@ class WSR_Baseline {
 		}
 
 		foreach ( $baseline_files as $path => $file_data ) {
+			if ( ! $this->is_path_in_current_scan_scope( (string) $path ) ) {
+				continue;
+			}
+
 			if ( ! isset( $inventory[ $path ] ) ) {
 				$deleted_files[] = $path;
 			}
@@ -322,6 +329,35 @@ class WSR_Baseline {
 			),
 			'max_file_size' => absint( $settings['max_file_size'] ?? 0 ),
 			'extensions'    => array_slice( $extension_counts, 0, 12, true ),
+		);
+	}
+
+	private function is_path_in_current_scan_scope( string $path ): bool {
+		$settings = WSR_Helpers::get_settings();
+		$path     = WSR_Helpers::normalize_relative_path( $path );
+
+		if ( WSR_Helpers::is_uploads_path( $path ) ) {
+			return ! empty( $settings['scan_uploads'] );
+		}
+
+		if ( WSR_Helpers::is_plugin_path( $path ) ) {
+			return ! empty( $settings['scan_plugins'] );
+		}
+
+		if ( WSR_Helpers::is_theme_path( $path ) ) {
+			return ! empty( $settings['scan_themes'] );
+		}
+
+		return ! empty( $settings['scan_root_files'] ) && in_array(
+			$path,
+			array(
+				'index.php',
+				'wp-config.php',
+				'.htaccess',
+				'wp-blog-header.php',
+				'wp-load.php',
+			),
+			true
 		);
 	}
 

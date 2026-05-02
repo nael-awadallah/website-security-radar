@@ -18,6 +18,9 @@ class WSR_Helpers {
 	const REVIEWED_OPTION       = 'website_security_radar_reviewed_results';
 	const TIMELINE_OPTION       = 'website_security_radar_timeline';
 	const USER_ACTIVITY_OPTION  = 'website_security_radar_user_activity';
+	const SCAN_STATUS_OPTION    = 'website_security_radar_scan_status';
+	const VULNERABILITY_CACHE_OPTION = 'website_security_radar_vulnerability_cache';
+	const SCAN_LOCK_TRANSIENT   = 'website_security_radar_scan_lock';
 	const CRON_HOOK             = 'website_security_radar_daily_scan';
 	const AJAX_SCAN_ACTION      = 'website_security_radar_run_scan';
 	const AJAX_BASELINE_ACTION  = 'website_security_radar_create_baseline';
@@ -46,6 +49,7 @@ class WSR_Helpers {
 			'scan_themes'           => 1,
 			'scan_plugins'          => 1,
 			'scan_root_files'       => 1,
+			'scan_batch_size'       => 500,
 			'timeline_event_limit'  => self::TIMELINE_DEFAULT_LIMIT,
 			'enable_vulnerability_checks' => 0,
 			'vulnerability_provider'      => 'mock',
@@ -171,7 +175,7 @@ class WSR_Helpers {
 	public static function get_vulnerability_provider_options(): array {
 		return array(
 			'mock'       => __( 'Mock Provider (Testing Only)', 'website-security-radar' ),
-			'wpscan'     => __( 'WPScan (Coming Soon)', 'website-security-radar' ),
+			'wpscan'     => __( 'WPScan Vulnerability Database', 'website-security-radar' ),
 			'patchstack' => __( 'Patchstack (Coming Soon)', 'website-security-radar' ),
 		);
 	}
@@ -672,7 +676,46 @@ class WSR_Helpers {
 	}
 
 	public static function get_default_results(): array {
-		return self::generate_realistic_demo_data();
+		$settings     = self::get_settings();
+		$provider_key = sanitize_key( (string) ( $settings['vulnerability_provider'] ?? 'mock' ) );
+		$providers    = self::get_vulnerability_provider_options();
+		$breakdown    = self::calculate_security_score_breakdown( array() );
+
+		return array(
+			'scanned_at'       => '',
+			'score'            => 100,
+			'risk_level'       => self::get_risk_level( 100 ),
+			'summary'          => array(
+				'total_scanned_files'     => 0,
+				'new_files'               => 0,
+				'modified_files'          => 0,
+				'deleted_files'           => 0,
+				'suspicious_files'        => 0,
+				'hardening_warnings'      => 0,
+				'critical_issues'         => 0,
+				'ignored_findings'        => 0,
+				'cron_findings'           => 0,
+				'user_security_findings'  => 0,
+				'vulnerability_findings'  => 0,
+			),
+			'severity_counts'  => self::count_severity( array() ),
+			'score_breakdown'  => $breakdown,
+			'issues'           => array(),
+			'baseline'         => array(
+				'has_baseline' => false,
+			),
+			'inventory_count'       => 0,
+			'vulnerability_checks'  => array(
+				'enabled'                => ! empty( $settings['enable_vulnerability_checks'] ),
+				'provider'               => $provider_key,
+				'provider_label'         => $providers[ $provider_key ] ?? '',
+				'status'                 => ! empty( $settings['enable_vulnerability_checks'] ) ? 'ready' : 'disabled',
+				'last_checked'           => '',
+				'vulnerabilities_found'  => 0,
+				'critical_found'         => 0,
+				'error_message'          => '',
+			),
+		);
 	}
 
 	private static function generate_realistic_demo_data(): array {

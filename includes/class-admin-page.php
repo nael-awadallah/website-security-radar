@@ -24,10 +24,13 @@ class WSR_Admin_Page {
 		add_action( 'admin_post_wsr_delete_baseline', array( $this, 'handle_delete_baseline' ) );
 		add_action( 'admin_post_wsr_mark_reviewed', array( $this, 'handle_mark_reviewed' ) );
 		add_action( 'admin_post_wsr_ignore_path', array( $this, 'handle_ignore_path' ) );
+		add_action( 'admin_post_wsr_rescan_path', array( $this, 'handle_rescan_path' ) );
+		add_action( 'admin_post_wsr_export_findings_csv', array( $this, 'handle_export_findings_csv' ) );
 		add_action( 'admin_post_wsr_add_ignore_rule', array( $this, 'handle_add_ignore_rule' ) );
 		add_action( 'admin_post_wsr_toggle_ignore_rule', array( $this, 'handle_toggle_ignore_rule' ) );
 		add_action( 'admin_post_wsr_delete_ignore_rule', array( $this, 'handle_delete_ignore_rule' ) );
 		add_action( 'admin_post_wsr_reset_ignore_list', array( $this, 'handle_reset_ignore_list' ) );
+		add_action( 'admin_post_wsr_reset_all_data', array( $this, 'handle_reset_all_data' ) );
 	}
 
 	public function register_menu(): void {
@@ -99,11 +102,12 @@ class WSR_Admin_Page {
 		$active_baseline    = $this->plugin->get_active_baseline();
 		$settings           = WSR_Helpers::get_settings();
 		$score              = (int) ( $results['score'] ?? 100 );
-		$risk_level         = strtolower( (string) ( $results['risk_level'] ?? 'safe' ) );
+		$risk_level         = sanitize_html_class( strtolower( (string) ( $results['risk_level'] ?? 'safe' ) ), 'safe' );
 		$recommendations    = $this->get_recommendations( $results );
 		$stat_cards         = $this->get_dashboard_stat_cards( $summary );
 		$scan_summary       = $this->get_dashboard_scan_summary( $results, $active_baseline, $settings );
 		$score_display      = max( 0, min( 100, $score ) );
+		$score_angle        = $score_display * 3.6;
 		?>
 		<div class="wrap wsr-wrap">
 			<?php $this->render_header( __( 'Dashboard', 'website-security-radar' ) ); ?>
@@ -119,9 +123,9 @@ class WSR_Admin_Page {
 								<?php
 								echo esc_html(
 									sprintf(
-										__( 'Score impacted by: %1$d critical issues, %2$d suspicious files', 'website-security-radar' ),
-										(int) ( $summary['critical_issues'] ?? 0 ),
-										(int) ( $summary['suspicious_files'] ?? 0 )
+										__( 'Score impacted by: %1$d active issues, %2$d total deduction points', 'website-security-radar' ),
+										count( $results['issues'] ?? array() ),
+										(int) ( $score_breakdown['total_deduction'] ?? 0 )
 									)
 								);
 								?>
@@ -133,12 +137,13 @@ class WSR_Admin_Page {
 							<?php if ( $top_critical_issue ) : ?>
 								<p class="wsr-inline-alert">
 									<strong><?php esc_html_e( 'Top critical issue:', 'website-security-radar' ); ?></strong>
+									<?php echo ' '; ?>
 									<?php echo esc_html( $top_critical_issue['issue'] ); ?>
 								</p>
 							<?php endif; ?>
 						</div>
 						<div class="wsr-score-visual">
-							<div class="wsr-score-ring wsr-risk-<?php echo esc_attr( $risk_level ); ?><?php echo 0 === $score_display ? ' wsr-score-ring-zero' : ''; ?>" style="--wsr-score: <?php echo esc_attr( (string) $score_display ); ?>; --wsr-score-angle: <?php echo esc_attr( (string) ( $score_display * 3.6 ) ); ?>deg;" aria-label="<?php echo esc_attr( sprintf( __( 'Security Score: %d out of 100', 'website-security-radar' ), $score_display ) ); ?>">
+							<div class="wsr-score-ring wsr-risk-<?php echo esc_attr( $risk_level ); ?><?php echo 0 === $score_display ? ' wsr-score-ring-zero' : ''; ?>" style="--wsr-score: <?php echo esc_attr( (string) $score_display ); ?>; --wsr-score-angle: <?php echo esc_attr( (string) $score_angle ); ?>deg;" aria-label="<?php echo esc_attr( sprintf( __( 'Security Score: %d out of 100', 'website-security-radar' ), $score_display ) ); ?>">
 								<span><?php echo esc_html( (string) $score_display ); ?></span>
 								<small>/100</small>
 							</div>
@@ -341,6 +346,7 @@ class WSR_Admin_Page {
 		?>
 		<div class="wrap wsr-wrap">
 			<?php $this->render_header( __( 'Settings', 'website-security-radar' ) ); ?>
+			<?php $this->render_notices(); ?>
 			<form method="post" action="options.php">
 				<?php settings_fields( 'wsr_settings_group' ); ?>
 				<div class="wsr-grid wsr-grid-settings">
@@ -375,6 +381,11 @@ class WSR_Admin_Page {
 								<input id="wsr-max-file-size" type="number" class="small-text" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[max_file_size]" value="<?php echo esc_attr( (string) $settings['max_file_size'] ); ?>" min="1024" step="1024" />
 								<p class="description"><?php esc_html_e( 'Files larger than this limit are skipped for content scanning. Default: 2097152 bytes (2MB).', 'website-security-radar' ); ?></p>
 							</div>
+							<div class="wsr-setting-row wsr-setting-field">
+								<label class="wsr-setting-heading" for="wsr-scan-batch-size"><?php esc_html_e( 'Scan progress batch size', 'website-security-radar' ); ?></label>
+								<input id="wsr-scan-batch-size" type="number" class="small-text" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[scan_batch_size]" value="<?php echo esc_attr( (string) ( $settings['scan_batch_size'] ?? 500 ) ); ?>" min="100" max="2000" step="100" />
+								<p class="description"><?php esc_html_e( 'Controls how often long scans update progress status while processing large file inventories.', 'website-security-radar' ); ?></p>
+							</div>
 						</div>
 					</div>
 					<div class="wsr-card">
@@ -400,7 +411,7 @@ class WSR_Admin_Page {
 							<div class="wsr-setting-row wsr-setting-field">
 								<label class="wsr-setting-heading" for="wsr-vulnerability-api-key"><?php esc_html_e( 'API key', 'website-security-radar' ); ?></label>
 								<input id="wsr-vulnerability-api-key" type="text" class="regular-text" name="<?php echo esc_attr( WSR_Helpers::SETTINGS_OPTION ); ?>[vulnerability_api_key]" value="<?php echo esc_attr( WSR_Helpers::mask_api_key( (string) ( $settings['vulnerability_api_key'] ?? '' ) ) ); ?>" autocomplete="off" />
-								<p class="description"><?php esc_html_e( 'Saved keys are masked after submission.', 'website-security-radar' ); ?></p>
+								<p class="description"><?php esc_html_e( 'Saved keys are masked after submission but stored in the WordPress options table. Restrict administrator access and database backups accordingly.', 'website-security-radar' ); ?></p>
 							</div>
 							<div class="wsr-setting-row wsr-setting-field">
 								<label class="wsr-setting-heading" for="wsr-vulnerability-severity"><?php esc_html_e( 'Minimum severity to show', 'website-security-radar' ); ?></label>
@@ -436,6 +447,15 @@ class WSR_Admin_Page {
 				</div>
 				<?php submit_button(); ?>
 			</form>
+			<div class="wsr-card">
+				<h2><?php esc_html_e( 'Danger Zone', 'website-security-radar' ); ?></h2>
+				<p class="wsr-card-intro"><?php esc_html_e( 'Reset all Website Security Radar data stored in the database, including settings, baselines, scan results, ignore rules, reviewed items, timeline, user activity, vulnerability cache, and scan status.', 'website-security-radar' ); ?></p>
+				<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+					<?php wp_nonce_field( WSR_Helpers::ADMIN_NONCE_ACTION ); ?>
+					<input type="hidden" name="action" value="wsr_reset_all_data" />
+					<?php submit_button( __( 'Reset All Plugin Data', 'website-security-radar' ), 'delete', 'submit', false, array( 'onclick' => "return window.confirm('" . esc_js( __( 'This will permanently delete all Website Security Radar data from the database. Continue?', 'website-security-radar' ) ) . "');" ) ); ?>
+				</form>
+			</div>
 		</div>
 		<?php
 	}
@@ -786,6 +806,70 @@ class WSR_Admin_Page {
 		exit;
 	}
 
+	public function handle_rescan_path(): void {
+		$this->assert_capability();
+		check_admin_referer( WSR_Helpers::ADMIN_NONCE_ACTION );
+
+		$path = WSR_Helpers::normalize_relative_path( sanitize_text_field( wp_unslash( $_GET['path'] ?? '' ) ) );
+
+		if ( '' === $path ) {
+			wp_safe_redirect( WSR_Helpers::admin_url( 'website-security-radar-results', array( 'wsr_notice' => 'rescan_invalid' ) ) );
+			exit;
+		}
+
+		$this->plugin->rescan_path( $path );
+
+		wp_safe_redirect(
+			WSR_Helpers::admin_url(
+				'website-security-radar-results',
+				array(
+					'path_search' => $path,
+					'wsr_notice'  => 'path_rescanned',
+				)
+			)
+		);
+		exit;
+	}
+
+	public function handle_export_findings_csv(): void {
+		$this->assert_capability();
+		check_admin_referer( WSR_Helpers::ADMIN_NONCE_ACTION );
+
+		$results = $this->plugin->get_latest_results();
+		$issues  = $this->get_filtered_issues( $results['issues'] ?? array() );
+
+		nocache_headers();
+		header( 'Content-Type: text/csv; charset=utf-8' );
+		header( 'Content-Disposition: attachment; filename=website-security-radar-findings-' . gmdate( 'Y-m-d-His' ) . '.csv' );
+
+		$output = fopen( 'php://output', 'w' );
+
+		if ( false === $output ) {
+			exit;
+		}
+
+		fputcsv( $output, array( 'Severity', 'Confidence', 'Type', 'Target', 'Issue', 'Explanation', 'Detected At', 'Reviewed' ) );
+
+		foreach ( $issues as $issue ) {
+			fputcsv(
+				$output,
+				array(
+					(string) ( $issue['severity'] ?? '' ),
+					(string) ( $issue['confidence'] ?? '' ),
+					WSR_Helpers::get_type_label( (string) ( $issue['type'] ?? '' ) ),
+					$this->get_issue_subject_label( $issue ),
+					(string) ( $issue['issue'] ?? '' ),
+					(string) ( $issue['explanation'] ?? '' ),
+					(string) ( $issue['detected_at'] ?? '' ),
+					! empty( $issue['reviewed'] ) ? 'yes' : 'no',
+				)
+			);
+		}
+
+		fclose( $output );
+		exit;
+	}
+
 	public function handle_add_ignore_rule(): void {
 		$this->assert_capability();
 		check_admin_referer( WSR_Helpers::ADMIN_NONCE_ACTION );
@@ -854,6 +938,21 @@ class WSR_Admin_Page {
 		check_admin_referer( WSR_Helpers::ADMIN_NONCE_ACTION );
 		delete_option( WSR_Helpers::IGNORE_OPTION );
 		wp_safe_redirect( WSR_Helpers::admin_url( 'website-security-radar-ignore-list', array( 'wsr_notice' => 'reset' ) ) );
+		exit;
+	}
+
+	public function handle_reset_all_data(): void {
+		$this->assert_capability();
+		check_admin_referer( WSR_Helpers::ADMIN_NONCE_ACTION );
+
+		foreach ( $this->get_reset_option_names() as $option_name ) {
+			delete_option( $option_name );
+		}
+
+		delete_transient( WSR_Helpers::SCAN_LOCK_TRANSIENT );
+		wp_clear_scheduled_hook( WSR_Helpers::CRON_HOOK );
+
+		wp_safe_redirect( WSR_Helpers::admin_url( 'website-security-radar-settings', array( 'wsr_notice' => 'all_data_reset' ) ) );
 		exit;
 	}
 
@@ -933,6 +1032,7 @@ class WSR_Admin_Page {
 										<a class="button button-small" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=wsr_mark_reviewed&issue=' . rawurlencode( (string) $issue['id'] ) ), WSR_Helpers::ADMIN_NONCE_ACTION ) ); ?>"><?php esc_html_e( 'Mark as reviewed', 'website-security-radar' ); ?></a>
 									<?php endif; ?>
 									<?php if ( ! empty( $issue['path'] ) ) : ?>
+										<a class="button button-small" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=wsr_rescan_path&path=' . rawurlencode( (string) $issue['path'] ) ), WSR_Helpers::ADMIN_NONCE_ACTION ) ); ?>"><?php esc_html_e( 'Rescan path', 'website-security-radar' ); ?></a>
 										<a class="button button-small" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=wsr_ignore_path&path=' . rawurlencode( (string) $issue['path'] ) ), WSR_Helpers::ADMIN_NONCE_ACTION ) ); ?>"><?php esc_html_e( 'Ignore path', 'website-security-radar' ); ?></a>
 									<?php endif; ?>
 								</div>
@@ -1242,6 +1342,8 @@ class WSR_Admin_Page {
 
 	private function get_dashboard_scan_summary( array $results, array $active_baseline, array $settings ): array {
 		$summary = $results['summary'] ?? array();
+		$scan_status = get_option( WSR_Helpers::SCAN_STATUS_OPTION, array() );
+		$scheduled_scan_enabled = ! empty( $settings['enable_scheduled_scan'] ) && (bool) wp_next_scheduled( WSR_Helpers::CRON_HOOK );
 		$items   = array(
 			array(
 				'label' => __( 'Latest scan', 'website-security-radar' ),
@@ -1257,9 +1359,21 @@ class WSR_Admin_Page {
 			),
 			array(
 				'label' => __( 'Scheduled scans', 'website-security-radar' ),
-				'value' => ! empty( $settings['enable_scheduled_scan'] ) ? __( 'Enabled', 'website-security-radar' ) : __( 'Disabled', 'website-security-radar' ),
+				'value' => $scheduled_scan_enabled ? __( 'Enabled', 'website-security-radar' ) : __( 'Disabled', 'website-security-radar' ),
 			),
 		);
+
+		if ( is_array( $scan_status ) && ! empty( $scan_status['status'] ) ) {
+			$items[] = array(
+				'label' => __( 'Scan status', 'website-security-radar' ),
+				'value' => sprintf(
+					/* translators: 1: scan status, 2: processed files. */
+					__( '%1$s (%2$d files)', 'website-security-radar' ),
+					ucfirst( sanitize_key( (string) $scan_status['status'] ) ),
+					(int) ( $scan_status['processed_files'] ?? 0 )
+				),
+			);
+		}
 
 		$scan_duration = $this->get_scan_duration_summary_value( $results );
 
@@ -1628,7 +1742,13 @@ class WSR_Admin_Page {
 		$selected_from     = $this->sanitize_date_input( wp_unslash( $_GET['date_from'] ?? '' ) );
 		$selected_to       = $this->sanitize_date_input( wp_unslash( $_GET['date_to'] ?? '' ) );
 		$selected_status   = sanitize_text_field( wp_unslash( $_GET['review_status'] ?? '' ) );
+		$selected_confidence = sanitize_key( wp_unslash( $_GET['confidence'] ?? '' ) );
+		$new_only          = ! empty( $_GET['new_only'] );
 		$type_options      = $this->get_issue_type_options( $issues );
+		$export_url        = wp_nonce_url(
+			admin_url( 'admin-post.php?action=wsr_export_findings_csv&' . http_build_query( $this->get_results_query_args() ) ),
+			WSR_Helpers::ADMIN_NONCE_ACTION
+		);
 		?>
 		<form method="get" class="wsr-filter-bar" id="wsr-filter-form">
 			<input type="hidden" name="page" value="website-security-radar-results" />
@@ -1671,8 +1791,25 @@ class WSR_Admin_Page {
 					<option value="ignored" <?php selected( $selected_status, 'ignored' ); ?>><?php esc_html_e( 'Ignored', 'website-security-radar' ); ?></option>
 				</select>
 			</div>
+			<div class="wsr-filter-field">
+				<label for="wsr-filter-confidence"><?php esc_html_e( 'Confidence', 'website-security-radar' ); ?></label>
+				<select id="wsr-filter-confidence" name="confidence">
+					<option value=""><?php esc_html_e( 'All confidence', 'website-security-radar' ); ?></option>
+					<?php foreach ( array( 'high', 'medium', 'low' ) as $confidence ) : ?>
+						<option value="<?php echo esc_attr( $confidence ); ?>" <?php selected( $selected_confidence, $confidence ); ?>><?php echo esc_html( ucfirst( $confidence ) ); ?></option>
+					<?php endforeach; ?>
+				</select>
+			</div>
+			<div class="wsr-filter-field">
+				<label for="wsr-filter-new-only"><?php esc_html_e( 'New findings', 'website-security-radar' ); ?></label>
+				<label>
+					<input id="wsr-filter-new-only" type="checkbox" name="new_only" value="1" <?php checked( $new_only ); ?> />
+					<?php esc_html_e( 'New since last scan', 'website-security-radar' ); ?>
+				</label>
+			</div>
 			<div class="wsr-filter-actions">
 				<button type="submit" class="button"><?php esc_html_e( 'Filter', 'website-security-radar' ); ?></button>
+				<a class="button" href="<?php echo esc_url( $export_url ); ?>"><?php esc_html_e( 'Export CSV', 'website-security-radar' ); ?></a>
 				<a class="button button-link" href="<?php echo esc_url( WSR_Helpers::admin_url( 'website-security-radar-results' ) ); ?>" id="wsr-reset-filters"><?php esc_html_e( 'Reset filters', 'website-security-radar' ); ?></a>
 			</div>
 		</form>
@@ -1900,11 +2037,14 @@ class WSR_Admin_Page {
 		$selected_from     = $this->sanitize_date_input( wp_unslash( $_GET['date_from'] ?? '' ) );
 		$selected_to       = $this->sanitize_date_input( wp_unslash( $_GET['date_to'] ?? '' ) );
 		$selected_status   = sanitize_text_field( wp_unslash( $_GET['review_status'] ?? '' ) );
+		$selected_confidence = sanitize_key( wp_unslash( $_GET['confidence'] ?? '' ) );
+		$new_only          = ! empty( $_GET['new_only'] );
+		$previous_ids      = $new_only ? $this->get_previous_issue_ids() : array();
 
 		return array_values(
 			array_filter(
 				$issues,
-				function ( array $issue ) use ( $selected_severity, $selected_type, $selected_path, $selected_from, $selected_to, $selected_status ): bool {
+				function ( array $issue ) use ( $selected_severity, $selected_type, $selected_path, $selected_from, $selected_to, $selected_status, $selected_confidence, $new_only, $previous_ids ): bool {
 					if ( '' !== $selected_severity && ( $issue['severity'] ?? '' ) !== $selected_severity ) {
 						return false;
 					}
@@ -1925,10 +2065,33 @@ class WSR_Admin_Page {
 						return false;
 					}
 
+					if ( '' !== $selected_confidence && sanitize_key( (string) ( $issue['confidence'] ?? '' ) ) !== $selected_confidence ) {
+						return false;
+					}
+
+					if ( $new_only && isset( $previous_ids[ (string) ( $issue['id'] ?? '' ) ] ) ) {
+						return false;
+					}
+
 					return true;
 				}
 			)
 		);
+	}
+
+	private function get_previous_issue_ids(): array {
+		$previous = $this->plugin->get_previous_results();
+		$ids      = array();
+
+		foreach ( $previous['issues'] ?? array() as $issue ) {
+			$issue_id = (string) ( $issue['id'] ?? '' );
+
+			if ( '' !== $issue_id ) {
+				$ids[ $issue_id ] = true;
+			}
+		}
+
+		return $ids;
 	}
 
 	private function get_filtered_timeline_events( array $events ): array {
@@ -2069,6 +2232,8 @@ class WSR_Admin_Page {
 		$date_from     = $this->sanitize_date_input( wp_unslash( $_GET['date_from'] ?? '' ) );
 		$date_to       = $this->sanitize_date_input( wp_unslash( $_GET['date_to'] ?? '' ) );
 		$review_status = sanitize_text_field( wp_unslash( $_GET['review_status'] ?? '' ) );
+		$confidence    = sanitize_key( wp_unslash( $_GET['confidence'] ?? '' ) );
+		$new_only      = ! empty( $_GET['new_only'] );
 		$paged         = absint( $_GET['paged'] ?? 0 );
 
 		if ( '' !== $severity ) {
@@ -2093,6 +2258,14 @@ class WSR_Admin_Page {
 
 		if ( in_array( $review_status, array( 'active', 'reviewed', 'ignored' ), true ) ) {
 			$args['review_status'] = $review_status;
+		}
+
+		if ( in_array( $confidence, array( 'high', 'medium', 'low' ), true ) ) {
+			$args['confidence'] = $confidence;
+		}
+
+		if ( $new_only ) {
+			$args['new_only'] = 1;
 		}
 
 		if ( ! $reset_paged && $paged > 1 ) {
@@ -2510,6 +2683,10 @@ class WSR_Admin_Page {
 				'message' => __( 'Ignore list reset.', 'website-security-radar' ),
 				'class'   => 'notice-success',
 			),
+			'all_data_reset'         => array(
+				'message' => __( 'All Website Security Radar data has been reset.', 'website-security-radar' ),
+				'class'   => 'notice-success',
+			),
 			'ignore_toggled'         => array(
 				'message' => __( 'Ignore rule updated.', 'website-security-radar' ),
 				'class'   => 'notice-success',
@@ -2517,6 +2694,14 @@ class WSR_Admin_Page {
 			'ignore_deleted'         => array(
 				'message' => __( 'Ignore rule deleted.', 'website-security-radar' ),
 				'class'   => 'notice-success',
+			),
+			'path_rescanned'         => array(
+				'message' => __( 'Path rescanned.', 'website-security-radar' ),
+				'class'   => 'notice-success',
+			),
+			'rescan_invalid'         => array(
+				'message' => __( 'The selected path could not be rescanned.', 'website-security-radar' ),
+				'class'   => 'notice-error',
 			),
 			'ignore_warning'         => array(
 				'message' => __( 'Broad ignore rules require confirmation before they can be saved.', 'website-security-radar' ),
@@ -2537,6 +2722,21 @@ class WSR_Admin_Page {
 		}
 
 		echo '<div class="notice ' . esc_attr( $messages[ $notice ]['class'] ) . ' is-dismissible"><p>' . esc_html( $messages[ $notice ]['message'] ) . '</p></div>';
+	}
+
+	private function get_reset_option_names(): array {
+		return array(
+			WSR_Helpers::SETTINGS_OPTION,
+			WSR_Helpers::BASELINE_OPTION,
+			WSR_Helpers::RESULTS_OPTION,
+			WSR_Helpers::PREVIOUS_RESULTS_OPTION,
+			WSR_Helpers::IGNORE_OPTION,
+			WSR_Helpers::REVIEWED_OPTION,
+			WSR_Helpers::TIMELINE_OPTION,
+			WSR_Helpers::USER_ACTIVITY_OPTION,
+			WSR_Helpers::SCAN_STATUS_OPTION,
+			WSR_Helpers::VULNERABILITY_CACHE_OPTION,
+		);
 	}
 
 	private function assert_capability(): void {

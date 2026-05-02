@@ -4,7 +4,7 @@
  * Plugin Name: Website Security Radar — Malware Scanner, File Monitor & Hardening Check
  * Plugin URI: https://github.com/nael-awadallah/website-security-radar
  * Description: Lightweight security intelligence for WordPress agencies and website owners.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Nael Awadallah
  * Author URI: https://www.nael-portfolio.site
  * License: GPLv2 or later
@@ -19,7 +19,7 @@ if (!defined('ABSPATH')) {
 	exit;
 }
 
-define('WSR_PLUGIN_VERSION', '1.1.0');
+define('WSR_PLUGIN_VERSION', '1.2.0');
 define('WSR_PLUGIN_FILE', __FILE__);
 define('WSR_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('WSR_PLUGIN_URL', plugin_dir_url(__FILE__));

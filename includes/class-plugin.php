@@ -105,6 +105,24 @@ class WSR_Plugin {
 	}
 
 	public function run_scan( bool $persist = true, string $scan_type = 'manual', bool $refresh_vulnerabilities = false ): array {
+		if ( get_transient( WSR_Helpers::SCAN_LOCK_TRANSIENT ) ) {
+			throw new RuntimeException( __( 'A scan is already running. Try again after it completes.', 'website-security-radar' ) );
+		}
+
+		set_transient( WSR_Helpers::SCAN_LOCK_TRANSIENT, time(), 30 * MINUTE_IN_SECONDS );
+		update_option(
+			WSR_Helpers::SCAN_STATUS_OPTION,
+			array(
+				'status'          => 'running',
+				'message'         => __( 'Scan started.', 'website-security-radar' ),
+				'processed_files' => 0,
+				'current_path'    => '',
+				'updated_at'      => gmdate( 'c' ),
+			),
+			false
+		);
+
+		try {
 		$settings    = WSR_Helpers::get_settings();
 		$ignore_list = WSR_Helpers::get_ignore_list();
 		$scanner     = new WSR_File_Scanner( $settings, $ignore_list );
@@ -159,6 +177,89 @@ class WSR_Plugin {
 		}
 
 		$this->record_scan_timeline_events( $results, $scan_type );
+		update_option(
+			WSR_Helpers::SCAN_STATUS_OPTION,
+			array(
+				'status'          => 'completed',
+				'message'         => __( 'Scan completed.', 'website-security-radar' ),
+				'processed_files' => count( $inventory ),
+				'current_path'    => '',
+				'updated_at'      => gmdate( 'c' ),
+			),
+			false
+		);
+		delete_transient( WSR_Helpers::SCAN_LOCK_TRANSIENT );
+
+		return $results;
+		} catch ( Throwable $exception ) {
+			update_option(
+				WSR_Helpers::SCAN_STATUS_OPTION,
+				array(
+					'status'          => 'failed',
+					'message'         => sanitize_text_field( $exception->getMessage() ),
+					'processed_files' => 0,
+					'current_path'    => '',
+					'updated_at'      => gmdate( 'c' ),
+				),
+				false
+			);
+			delete_transient( WSR_Helpers::SCAN_LOCK_TRANSIENT );
+			throw $exception;
+		}
+	}
+
+	public function rescan_path( string $path ): array {
+		$settings    = WSR_Helpers::get_settings();
+		$ignore_list = WSR_Helpers::get_ignore_list();
+		$scanner     = new WSR_File_Scanner( $settings, $ignore_list );
+		$inventory   = $scanner->scan_path( $path );
+
+		if ( empty( $inventory ) ) {
+			return $this->get_latest_results();
+		}
+
+		$baseline = $this->filter_baseline_by_ignore_rules( $this->baseline->compare( $inventory ), $ignore_list );
+		$baseline['deleted'] = array();
+		$issues   = $this->build_change_issues( $baseline );
+		$issues   = array_merge( $issues, ( new WSR_Malware_Scanner( $settings, $ignore_list, $baseline ) )->scan( $inventory ) );
+		$results  = $this->get_latest_results();
+		$path     = WSR_Helpers::normalize_relative_path( $path );
+		$current  = array_values(
+			array_filter(
+				$results['issues'] ?? array(),
+				static function ( array $issue ) use ( $path ): bool {
+					return WSR_Helpers::normalize_relative_path( (string) ( $issue['path'] ?? $issue['file'] ?? '' ) ) !== $path;
+				}
+			)
+		);
+		$issues   = WSR_Helpers::apply_review_status( array_merge( $current, $issues ) );
+		$severity = WSR_Helpers::count_severity( $issues );
+		$score_breakdown = WSR_Helpers::calculate_security_score_breakdown( $issues );
+
+		$results['issues']          = $issues;
+		$results['severity_counts'] = $severity;
+		$results['score_breakdown'] = $score_breakdown;
+		$results['score']           = (int) ( $score_breakdown['score'] ?? 100 );
+		$results['risk_level']      = WSR_Helpers::get_risk_level( (int) $results['score'] );
+		$results                    = $this->build_results(
+			$results,
+			(int) ( $results['inventory_count'] ?? 0 ),
+			is_array( $results['baseline'] ?? null ) ? $results['baseline'] : array(),
+			$issues,
+			(int) ( $results['summary']['ignored_findings'] ?? 0 )
+		);
+
+		update_option( WSR_Helpers::PREVIOUS_RESULTS_OPTION, $this->get_latest_results(), false );
+		update_option( WSR_Helpers::RESULTS_OPTION, $results, false );
+		$this->timeline->add_event(
+			array(
+				'type'          => 'manual_scan_completed',
+				'severity'      => 'info',
+				'message'       => __( 'Single path rescan completed.', 'website-security-radar' ),
+				'relative_path' => $path,
+				'actor_user_id' => get_current_user_id(),
+			)
+		);
 
 		return $results;
 	}

@@ -14,6 +14,7 @@ class WSR_User_Security_Monitor {
 		add_action( 'user_register', array( $this, 'handle_user_register' ), 10, 1 );
 		add_action( 'set_user_role', array( $this, 'handle_set_user_role' ), 10, 3 );
 		add_action( 'profile_update', array( $this, 'handle_profile_update' ), 10, 2 );
+		add_action( 'wp_login', array( $this, 'handle_login' ), 10, 2 );
 	}
 
 	public function scan(): array {
@@ -166,6 +167,14 @@ class WSR_User_Security_Monitor {
 		);
 	}
 
+	public function handle_login( string $user_login, WP_User $user ): void {
+		if ( ! in_array( 'administrator', (array) $user->roles, true ) ) {
+			return;
+		}
+
+		update_user_meta( $user->ID, 'wsr_last_login', time() );
+	}
+
 	private function issue( string $severity, string $confidence, string $issue, string $explanation, string $recommended_action, ?WP_User $user = null, array $event = array() ): array {
 		$user_login = '';
 
@@ -287,7 +296,7 @@ class WSR_User_Security_Monitor {
 	}
 
 	private function get_last_login_timestamp( int $user_id ): int {
-		foreach ( array( 'last_login', 'wp-last-login', 'last_login_timestamp' ) as $meta_key ) {
+		foreach ( array( 'wsr_last_login', 'last_login', 'wp-last-login', 'last_login_timestamp' ) as $meta_key ) {
 			$value = get_user_meta( $user_id, $meta_key, true );
 
 			if ( is_numeric( $value ) ) {

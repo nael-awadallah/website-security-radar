@@ -4,7 +4,7 @@ Tags: security, malware scanner, wordpress security, file monitor, hardening, fi
 Requires at least: 6.2
 Tested up to: 6.8
 Requires PHP: 8.0
-Stable tag: 1.1.0
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -126,6 +126,13 @@ Files larger than the configured size limit are skipped for content scanning to 
 No. The plugin does not modify files or configurations automatically.
 
 == Changelog ==
+
+= 1.2.0 =
+* Added live WPScan vulnerability checks with API token support, response caching, severity filtering, and handled provider errors.
+* Added scan progress status, scan overlap locking, single-path rescans, and CSV export for findings.
+* Expanded hardening checks for debug logs, uploads PHP execution controls, REST user route exposure, install/upgrade endpoints, backup archives, security headers, and file modifications.
+* Added native administrator login tracking to improve inactive admin account findings.
+* Added clearer API key storage warning in settings.
 
 = 1.1.0 =
 * Added optional vulnerability check integration with explicit opt-in, provider selection, privacy notice, masked API key display, and manual AJAX trigger.

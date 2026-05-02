@@ -84,24 +84,35 @@ Expected:
 - The dashboard shows `Ready` before the first check
 - Clicking `Run Vulnerability Check` stores a `Vulnerability Checks` status block
 
-2. Select `WPScan Placeholder` or `Patchstack Placeholder` without an API key
+2. Select `WPScan Vulnerability Database` without an API key
 Expected:
 - Dashboard status shows `Not configured`
 - Manual vulnerability check returns a handled error state without fatal errors
 
-3. Register a cron event with a suspicious hook like `hidden_mailer_eval`
+3. Select `WPScan Vulnerability Database` with an invalid API key
+Expected:
+- Manual vulnerability check returns a handled WPScan authentication error
+- Existing non-vulnerability findings remain visible
+
+4. Register a cron event with a suspicious hook like `hidden_mailer_eval`
 Expected:
 - `Cron`
 - `high`
 - Explanation says `Review recommended`
 
-4. Create or promote a user to administrator
+5. Create or promote a user to administrator
 Expected:
 - Timeline records the event
 - Scan results include `User Security` findings for recent admin creation or promotion
 
-5. Open `Export Client Report`
+6. Open `Export Client Report`
 Expected:
 - Report renders in HTML
 - No absolute server paths or file contents are shown
 - Browser print dialog can save it as PDF
+
+7. Use the results page workflow controls
+Expected:
+- `Confidence` and `New since last scan` filters update results
+- `Export CSV` downloads the filtered findings
+- `Rescan path` updates findings for the selected path without reporting unrelated baseline files as deleted

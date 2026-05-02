@@ -185,6 +185,10 @@ jQuery(function ($) {
 			}
 		});
 
+		if (!form.querySelector('#wsr-filter-new-only:checked')) {
+			url.searchParams.delete('new_only');
+		}
+
 		url.searchParams.delete('paged');
 		loadResults(url.toString(), true);
 	});
@@ -204,7 +208,7 @@ jQuery(function ($) {
 		loadResults(href, true);
 	});
 
-	$(document).on('change', '#wsr-filter-severity, #wsr-filter-type, #wsr-filter-date-from, #wsr-filter-date-to, #wsr-filter-review-status', function () {
+	$(document).on('change', '#wsr-filter-severity, #wsr-filter-type, #wsr-filter-date-from, #wsr-filter-date-to, #wsr-filter-review-status, #wsr-filter-confidence, #wsr-filter-new-only', function () {
 		if (!window.fetch || !window.DOMParser) {
 			return;
 		}

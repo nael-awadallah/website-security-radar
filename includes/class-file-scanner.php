@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class WSR_File_Scanner {
 	private array $settings;
 	private array $ignore_list;
+	private int $processed_files = 0;
 
 	public function __construct( array $settings, array $ignore_list ) {
 		$this->settings    = $settings;
@@ -20,6 +21,8 @@ class WSR_File_Scanner {
 
 	public function scan(): array {
 		$inventory = array();
+		$this->processed_files = 0;
+		$this->record_progress( 'running', __( 'Preparing scan roots.', 'website-security-radar' ) );
 
 		foreach ( $this->get_scan_roots() as $root ) {
 			if ( is_file( $root ) ) {
@@ -27,6 +30,8 @@ class WSR_File_Scanner {
 
 				if ( $file_data ) {
 					$inventory[ $file_data['path'] ] = $file_data;
+					++$this->processed_files;
+					$this->maybe_record_batch_progress( $file_data['path'] );
 				}
 
 				continue;
@@ -38,8 +43,27 @@ class WSR_File_Scanner {
 		}
 
 		ksort( $inventory );
+		$this->record_progress( 'inventory_complete', __( 'File inventory completed.', 'website-security-radar' ), count( $inventory ) );
 
 		return $inventory;
+	}
+
+	public function scan_path( string $relative_path ): array {
+		$relative_path = WSR_Helpers::normalize_relative_path( $relative_path );
+
+		if ( '' === $relative_path || false !== strpos( $relative_path, '..' ) || $this->should_skip_path( $relative_path ) ) {
+			return array();
+		}
+
+		$absolute_path = wp_normalize_path( ABSPATH . ltrim( $relative_path, '/' ) );
+
+		if ( ! is_file( $absolute_path ) ) {
+			return array();
+		}
+
+		$file_data = $this->build_file_entry( $absolute_path );
+
+		return $file_data ? array( $file_data['path'] => $file_data ) : array();
 	}
 
 	private function get_scan_roots(): array {
@@ -100,6 +124,8 @@ class WSR_File_Scanner {
 
 			if ( $file_data ) {
 				$inventory[ $file_data['path'] ] = $file_data;
+				++$this->processed_files;
+				$this->maybe_record_batch_progress( $file_data['path'] );
 			}
 		}
 	}
@@ -154,5 +180,38 @@ class WSR_File_Scanner {
 		}
 
 		return is_readable( $file );
+	}
+
+	private function maybe_record_batch_progress( string $path ): void {
+		$batch_size = min( 2000, max( 100, absint( $this->settings['scan_batch_size'] ?? 500 ) ) );
+
+		if ( 0 !== $this->processed_files % $batch_size ) {
+			return;
+		}
+
+		$this->record_progress(
+			'running',
+			sprintf(
+				/* translators: %d: processed file count. */
+				__( 'Scanned %d files so far.', 'website-security-radar' ),
+				$this->processed_files
+			),
+			$this->processed_files,
+			$path
+		);
+	}
+
+	private function record_progress( string $status, string $message, int $processed = 0, string $path = '' ): void {
+		update_option(
+			WSR_Helpers::SCAN_STATUS_OPTION,
+			array(
+				'status'          => sanitize_key( $status ),
+				'message'         => sanitize_text_field( $message ),
+				'processed_files' => $processed,
+				'current_path'    => WSR_Helpers::get_safe_display_path( $path ),
+				'updated_at'      => gmdate( 'c' ),
+			),
+			false
+		);
 	}
 }
