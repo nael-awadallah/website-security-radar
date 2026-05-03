@@ -8,7 +8,7 @@ Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Website Security Radar is a lightweight WordPress security plugin that monitors file changes, detects suspicious code patterns, and provides clear hardening insights -- without automatic file modifications and with all remote checks disabled by default.
+Website Security Radar is a lightweight WordPress security plugin that monitors file changes, detects suspicious code patterns, and provides clear hardening insights -- without automatic file modifications and with all remote checks disabled by default..
 
 == Description ==
 
